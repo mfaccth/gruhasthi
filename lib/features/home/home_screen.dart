@@ -485,15 +485,31 @@ class _VoiceHome extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(
-          isListening
-              ? (liveTranscript.isEmpty ? 'Listening…' : liveTranscript)
-              : 'What would you like to do?',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleMedium,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: double.infinity,
+          height: 72,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: isListening
+                ? const Color(0xFFFFE5EA)
+                : const Color(0x00FFFFFF),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            isListening
+                ? (liveTranscript.isEmpty
+                      ? 'Listening…'
+                      : liveTranscriptForDisplay(liveTranscript))
+                : 'What would you like to do?',
+            maxLines: isListening ? 3 : 1,
+            overflow: TextOverflow.fade,
+            softWrap: true,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ),
-        const SizedBox(height: 12),
         SizedBox(
           height: 350,
           child: LayoutBuilder(
@@ -503,7 +519,7 @@ class _VoiceHome extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: [
                   Positioned(
-                    top: 0,
+                    top: 50,
                     left: centre - 76,
                     child: _RadialAction(
                       label: 'Contacts',
@@ -513,7 +529,7 @@ class _VoiceHome extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    top: 0,
+                    top: 50,
                     left: centre + 8,
                     child: _RadialAction(
                       label: 'Stores',
@@ -523,7 +539,7 @@ class _VoiceHome extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    top: 92,
+                    top: 126,
                     left: 0,
                     child: _RadialAction(
                       label: 'Grocery lists',
@@ -533,7 +549,7 @@ class _VoiceHome extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    top: 92,
+                    top: 126,
                     right: 0,
                     child: _RadialAction(
                       label: 'Pay',
@@ -543,7 +559,7 @@ class _VoiceHome extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    top: 195,
+                    top: 200,
                     left: centre - 60,
                     child: _VoiceTarget(
                       onPressStart: onPressMicrophone,
@@ -556,7 +572,6 @@ class _VoiceHome extends StatelessWidget {
             },
           ),
         ),
-        const SizedBox(height: 6),
         Text(
           'Try “Add milk to Village list”',
           textAlign: TextAlign.center,
@@ -567,6 +582,24 @@ class _VoiceHome extends StatelessWidget {
       ],
     );
   }
+}
+
+String liveTranscriptForDisplay(String transcript) {
+  const charactersPerLine = 22;
+  final words = transcript.trim().split(RegExp(r'\s+'));
+  final lines = <String>[];
+  var line = '';
+  for (final word in words) {
+    final next = line.isEmpty ? word : '$line $word';
+    if (line.isNotEmpty && next.length > charactersPerLine) {
+      lines.add(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line.isNotEmpty) lines.add(line);
+  return lines.join('\n');
 }
 
 class _RadialAction extends StatelessWidget {
