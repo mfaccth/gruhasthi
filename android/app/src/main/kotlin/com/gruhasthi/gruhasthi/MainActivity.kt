@@ -6,8 +6,13 @@ import com.google.android.libraries.places.api.net.SearchByTextRequest
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    private val gemmaExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var gemmaCommandEngine: GemmaCommandEngine? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -94,5 +99,47 @@ class MainActivity : FlutterActivity() {
                     )
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.gruhasthi.gruhasthi/gemma")
+            .setMethodCallHandler { call, result ->
+                val interpreter = gemmaCommandEngine
+                    ?: GemmaCommandEngine(applicationContext).also { gemmaCommandEngine = it }
+                when (call.method) {
+                    "status" -> result.success(interpreter.status())
+                    "interpretTranscript" -> {
+                        val transcript = call.argument<String>("transcript")?.trim().orEmpty()
+                        val stores = call.argument<List<String>>("stores") ?: emptyList()
+                        if (transcript.isBlank()) {
+                            result.error("INVALID_TRANSCRIPT", "Say or type a command first.", null)
+                            return@setMethodCallHandler
+                        }
+                        gemmaExecutor.execute {
+                            try {
+                                val response = interpreter.interpret(transcript, stores)
+                                runOnUiThread { result.success(response) }
+                            } catch (exception: ModelUnavailableException) {
+                                runOnUiThread {
+                                    result.error("MODEL_UNAVAILABLE", exception.message, interpreter.status())
+                                }
+                            } catch (exception: Exception) {
+                                runOnUiThread {
+                                    result.error(
+                                        "INTERPRETATION_FAILED",
+                                        exception.message ?: "Gemma could not understand that command.",
+                                        null,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    override fun onDestroy() {
+        gemmaExecutor.shutdownNow()
+        gemmaCommandEngine?.close()
+        super.onDestroy()
     }
 }

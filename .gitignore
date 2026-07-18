@@ -39,7 +39,13 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Optional on-device LLM model files are too large for the app repository.
+*.litertlm
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android app-specific external files used while testing on-device Gemma.
+/android/app/src/main/assets/*.litertlm

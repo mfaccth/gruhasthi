@@ -6,6 +6,9 @@
         android:label="gruhasthi"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Optional GPU support for the on-device Gemma proof of concept. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

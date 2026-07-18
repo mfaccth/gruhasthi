@@ -145,9 +145,21 @@ class _HomeScreenState extends State<HomeScreen> {
       case OpenGroceryVoiceCommand(:final storeName):
         final store = _findStore(data, storeName!);
         if (store != null) await _openGroceryEditor(store);
-      case AddGroceryVoiceCommand(:final storeName, :final item):
+      case AddGroceryVoiceCommand(
+        :final storeName,
+        :final item,
+        :final quantity,
+        :final unit,
+      ):
         final store = _findStore(data, storeName);
-        if (store != null) await _openGroceryEditor(store, initialItem: item);
+        if (store != null) {
+          await _openGroceryEditor(
+            store,
+            initialItem: item,
+            initialQuantity: quantity,
+            initialUnit: unit,
+          );
+        }
       case AddContactVoiceCommand(:final name, :final phoneNumber):
         await _openContactsForVoice(name, phoneNumber);
       case OpenStoresVoiceCommand():
@@ -310,6 +322,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openGroceryEditor(
     Store store, {
     String initialItem = '',
+    String initialQuantity = '',
+    GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
   }) async {
     await Navigator.push<void>(
       context,
@@ -318,6 +332,8 @@ class _HomeScreenState extends State<HomeScreen> {
           repository: widget.repository,
           store: store,
           initialItem: initialItem,
+          initialQuantity: initialQuantity,
+          initialUnit: initialUnit,
         ),
       ),
     );

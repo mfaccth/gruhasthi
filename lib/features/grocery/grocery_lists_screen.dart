@@ -4,6 +4,7 @@ import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
 import '../whatsapp/whatsapp_message.dart';
 import '../whatsapp/whatsapp_preview_screen.dart';
+import '../voice/voice_command_sheet.dart';
 
 class GroceryListsScreen extends StatefulWidget {
   const GroceryListsScreen({super.key, required this.repository});
@@ -83,11 +84,15 @@ class GroceryListEditor extends StatefulWidget {
     required this.repository,
     required this.store,
     this.initialItem = '',
+    this.initialQuantity = '',
+    this.initialUnit = GroceryQuantityUnit.count,
   });
 
   final HouseholdRepository repository;
   final Store store;
   final String initialItem;
+  final String initialQuantity;
+  final GroceryQuantityUnit initialUnit;
 
   @override
   State<GroceryListEditor> createState() => _GroceryListEditorState();
@@ -96,6 +101,7 @@ class GroceryListEditor extends StatefulWidget {
 class _GroceryListEditorState extends State<GroceryListEditor> {
   final _itemController = TextEditingController();
   final _quantityController = TextEditingController();
+  late GroceryQuantityUnit _unit;
   List<GroceryItem> _items = const [];
   bool _loading = true;
 
@@ -103,6 +109,8 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   void initState() {
     super.initState();
     _itemController.text = widget.initialItem;
+    _quantityController.text = widget.initialQuantity;
+    _unit = widget.initialUnit;
     _load();
   }
 
@@ -121,7 +129,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     final item = GroceryItem(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
-      quantity: _quantityController.text.trim(),
+      quantity: groceryQuantityLabel(_quantityController.text.trim(), _unit),
     );
     final data = await widget.repository.load();
     final updated = [...data.itemsFor(widget.store.id), item];
@@ -199,35 +207,74 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _itemController,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Grocery item',
-                            border: OutlineInputBorder(),
-                          ),
+                      TextField(
+                        controller: _itemController,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Grocery item',
+                          border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 95,
-                        child: TextField(
-                          controller: _quantityController,
-                          onSubmitted: (_) => _addItem(),
-                          decoration: const InputDecoration(
-                            labelText: 'Quantity',
-                            border: OutlineInputBorder(),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _quantityController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onSubmitted: (_) => _addItem(),
+                              decoration: const InputDecoration(
+                                labelText: 'Quantity (optional)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Add grocery item',
-                        onPressed: _addItem,
-                        icon: const Icon(Icons.add_circle),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 112,
+                            child: DropdownButtonFormField<GroceryQuantityUnit>(
+                              initialValue: _unit,
+                              decoration: const InputDecoration(
+                                labelText: 'Unit',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: GroceryQuantityUnit.count,
+                                  child: Text('Count'),
+                                ),
+                                DropdownMenuItem(
+                                  value: GroceryQuantityUnit.dozen,
+                                  child: Text('Dozen'),
+                                ),
+                                DropdownMenuItem(
+                                  value: GroceryQuantityUnit.kilogram,
+                                  child: Text('kg'),
+                                ),
+                                DropdownMenuItem(
+                                  value: GroceryQuantityUnit.litre,
+                                  child: Text('litre'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _unit = value);
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Add grocery item',
+                            onPressed: _addItem,
+                            icon: const Icon(Icons.add_circle),
+                          ),
+                        ],
                       ),
                     ],
                   ),

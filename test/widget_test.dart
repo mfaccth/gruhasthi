@@ -62,6 +62,45 @@ void main() {
     expect(addCommand.item, 'milk');
   });
 
+  test('recognizes a grocery quantity in kg, litre, and count', () {
+    final kilograms =
+        VoiceCommand.fromTranscript('add two kg potatoes to Village', const [
+              'Village',
+            ])
+            as AddGroceryVoiceCommand;
+    final litres =
+        VoiceCommand.fromTranscript('add 1.5 litres milk to Village', const [
+              'Village',
+            ])
+            as AddGroceryVoiceCommand;
+    final count =
+        VoiceCommand.fromTranscript('add 6 eggs to Village', const ['Village'])
+            as AddGroceryVoiceCommand;
+
+    expect(kilograms.item, 'potatoes');
+    expect(kilograms.quantity, '2');
+    expect(kilograms.unit, GroceryQuantityUnit.kilogram);
+    expect(litres.item, 'milk');
+    expect(litres.quantity, '1.5');
+    expect(litres.unit, GroceryQuantityUnit.litre);
+    expect(count.item, 'eggs');
+    expect(count.quantity, '6');
+    expect(count.unit, GroceryQuantityUnit.count);
+  });
+
+  test('recognizes dozen as a grocery unit', () {
+    final command =
+        VoiceCommand.fromTranscript('add one dozen eggs to Village', const [
+              'Village',
+            ])
+            as AddGroceryVoiceCommand;
+
+    expect(command.item, 'eggs');
+    expect(command.quantity, '1');
+    expect(command.unit, GroceryQuantityUnit.dozen);
+    expect(groceryQuantityLabel(command.quantity, command.unit), '1 dozen');
+  });
+
   test('recognizes a contact command and spoken phone digits', () {
     final command = VoiceCommand.fromTranscript(
       'add the contact Manohar number is nine eight seven six five four three two one zero',
@@ -120,6 +159,63 @@ void main() {
     expect(command.name, 'Star Bazaar');
     expect(command.whatsAppNumber, '9980199891');
   });
+
+  test('maps a validated on-device Gemma response to an existing command', () {
+    final command = VoiceCommand.fromGemmaResult(
+      const {
+        'action': 'add_grocery',
+        'store': 'bigbasket',
+        'item': 'two packets of milk',
+      },
+      const ['Village', 'Big Basket'],
+    );
+
+    expect(command, isA<AddGroceryVoiceCommand>());
+    final addCommand = command as AddGroceryVoiceCommand;
+    expect(addCommand.storeName, 'Big Basket');
+    expect(addCommand.item, 'milk');
+    expect(addCommand.quantity, '2');
+    expect(addCommand.unit, GroceryQuantityUnit.count);
+  });
+
+  test('extracts a quantity when Gemma leaves it in the grocery item text', () {
+    final command =
+        VoiceCommand.fromGemmaResult(
+              const {
+                'action': 'add_grocery',
+                'store': 'village',
+                'item': '1.5 litre milk',
+              },
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
+
+    expect(command.item, 'milk');
+    expect(command.quantity, '1.5');
+    expect(command.unit, GroceryQuantityUnit.litre);
+  });
+
+  test(
+    'preserves dozen from the original request when Gemma returns count',
+    () {
+      final command =
+          VoiceCommand.fromGemmaResult(
+                const {
+                  'action': 'add_grocery',
+                  'store': 'village',
+                  'item': 'eggs',
+                  'quantity': '1',
+                  'unit': 'count',
+                },
+                const ['Village'],
+                transcript: 'add one dozen eggs to Village',
+              )
+              as AddGroceryVoiceCommand;
+
+      expect(command.quantity, '1');
+      expect(command.unit, GroceryQuantityUnit.dozen);
+    },
+  );
 
   test('formats time-aware greetings with a user name', () {
     expect(greetingForHour(9, 'Manohar'), 'Good morning, Manohar');

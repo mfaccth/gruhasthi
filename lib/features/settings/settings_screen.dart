@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
+import '../voice/gemma_command_interpreter.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, required this.repository});
@@ -14,11 +15,15 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late Future<HouseholdData> _data;
+  final GemmaCommandInterpreter _gemmaInterpreter =
+      const GemmaCommandInterpreter();
+  late Future<GemmaModelStatus> _gemmaStatus;
 
   @override
   void initState() {
     super.initState();
     _data = widget.repository.load();
+    _gemmaStatus = _gemmaInterpreter.status();
   }
 
   Future<void> _editName(HouseholdData data) async {
@@ -44,6 +49,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // saved value is visible as soon as the edit dialog closes.
     if (mounted) setState(() => _data = Future.value(updatedData));
     await widget.repository.save(updatedData);
+  }
+
+  Future<void> _showGemmaSetup(GemmaModelStatus status) async {
+    final shouldRefresh = await showDialog<bool>(
+      context: context,
+      builder: (_) => GemmaSetupDialog(status: status),
+    );
+    if (shouldRefresh == true && mounted) {
+      setState(() => _gemmaStatus = _gemmaInterpreter.status());
+    }
   }
 
   @override
@@ -85,10 +100,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () => _editLocality(data),
                 ),
               ),
+              const SizedBox(height: 10),
+              FutureBuilder<GemmaModelStatus>(
+                future: _gemmaStatus,
+                builder: (context, gemmaSnapshot) {
+                  final gemma =
+                      gemmaSnapshot.data ?? GemmaModelStatus.unavailable;
+                  return Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.memory_outlined),
+                      ),
+                      title: const Text('On-device Gemma (pilot)'),
+                      subtitle: Text(
+                        gemma.isReady
+                            ? 'Gemma 4 E2B is ready for private command interpretation.'
+                            : 'Not installed. Tap to set up the optional pilot model.',
+                      ),
+                      trailing: Icon(
+                        gemma.isReady
+                            ? Icons.check_circle_outline
+                            : Icons.info_outline,
+                      ),
+                      onTap: () => _showGemmaSetup(gemma),
+                    ),
+                  );
+                },
+              ),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+class GemmaSetupDialog extends StatelessWidget {
+  const GemmaSetupDialog({super.key, required this.status});
+
+  final GemmaModelStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('On-device Gemma pilot'),
+      content: SingleChildScrollView(
+        child: Text.rich(
+          TextSpan(
+            style: Theme.of(context).textTheme.bodyMedium,
+            children: [
+              const TextSpan(
+                text:
+                    'Gemma interprets a voice transcript entirely on this phone. '
+                    'It is optional and does not replace the review step.\n\n'
+                    'Download the LiteRT-LM Gemma 4 E2B model (about 2.6 GB), then copy it to this exact location:\n\n',
+              ),
+              TextSpan(
+                text: status.modelPath.isEmpty
+                    ? 'Open this dialog on an Android device to see the path.'
+                    : status.modelPath,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const TextSpan(
+                text:
+                    '\n\nThe file name must be gemma-4-E2B-it.litertlm. '
+                    'After copying it, return here and choose Check again.',
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF42363A),
+            side: const BorderSide(color: Color(0xFF42363A)),
+          ),
+          child: const Text('Close'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFB64E70),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Check again'),
+        ),
+      ],
     );
   }
 }

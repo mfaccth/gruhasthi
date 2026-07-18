@@ -61,12 +61,18 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
 
 dependencies {
     implementation("com.google.android.libraries.places:places:5.1.1")
+    // Android runtime for the optional, on-device Gemma proof of concept.
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
 }
 
 kotlin {
