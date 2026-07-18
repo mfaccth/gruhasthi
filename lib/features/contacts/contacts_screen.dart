@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
+import '../voice/voice_command_sheet.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({
@@ -102,63 +104,290 @@ class _ContactsScreenState extends State<ContactsScreen> {
     await _refresh();
   }
 
+  Future<void> _makeVoiceRequest() async {
+    final transcript = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _ContactVoiceCaptureSheet(),
+    );
+    if (!mounted || transcript == null || transcript.trim().isEmpty) return;
+    final data = await widget.repository.load();
+    if (!mounted) return;
+    final command = await showModalBottomSheet<VoiceCommand>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: VoiceCommandSheet(
+          storeNames: data.stores.map((store) => store.name).toList(),
+          initialTranscript: transcript,
+        ),
+      ),
+    );
+    if (!mounted || command == null) return;
+    switch (command) {
+      case AddContactVoiceCommand(:final name, :final phoneNumber):
+        await _edit(null, initialName: name, initialPhone: phoneNumber);
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Try “Add contact Aarti, phone number 9876543210.”'),
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Contacts')),
-      floatingActionButton: FloatingActionButton.extended(
-        tooltip: 'Add contact',
-        onPressed: () => _edit(null),
-        icon: const Icon(Icons.person_add_alt_1_outlined),
-        label: const Text('Add contact'),
-        backgroundColor: const Color(0xFFF2B8C5),
-        foregroundColor: const Color(0xFF43383B),
-      ),
-      body: FutureBuilder<HouseholdData>(
-        future: _data,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final contacts = snapshot.data!.contacts;
-          if (contacts.isEmpty) {
-            return const Center(
-              child: Text('Add a contact for future payments or messages.'),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: contacts.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final contact = contacts[index];
-              return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(contact.name.substring(0, 1).toUpperCase()),
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    foregroundColor: const Color(0xFF796C70),
                   ),
-                  title: Text(contact.name),
-                  subtitle: Text(
-                    contact.phoneNumber.isEmpty
-                        ? 'No phone number added'
-                        : contact.phoneNumber,
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') _edit(contact);
-                      if (value == 'remove') _delete(contact);
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      PopupMenuItem(value: 'remove', child: Text('Remove')),
-                    ],
-                  ),
-                  onTap: () => _edit(contact),
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Back'),
                 ),
-              );
-            },
-          );
-        },
+              ),
+              const SizedBox(height: 26),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Contacts',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                  ),
+                  IconButton.filled(
+                    tooltip: 'Add contact by voice',
+                    onPressed: _makeVoiceRequest,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF2B8C5),
+                      foregroundColor: const Color(0xFF703146),
+                    ),
+                    icon: const Icon(Icons.mic_none_outlined),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => _edit(null),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFB64E70),
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Add contact'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              Expanded(
+                child: FutureBuilder<HouseholdData>(
+                  future: _data,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final contacts = snapshot.data!.contacts;
+                    if (contacts.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'Add a contact for future payments or messages.',
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      padding: EdgeInsets.zero,
+                      itemCount: contacts.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final contact = contacts[index];
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Text(
+                                contact.name.substring(0, 1).toUpperCase(),
+                              ),
+                            ),
+                            title: Text(contact.name),
+                            subtitle: Text(
+                              contact.phoneNumber.isEmpty
+                                  ? 'No phone number added'
+                                  : contact.phoneNumber,
+                            ),
+                            trailing: PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') _edit(contact);
+                                if (value == 'remove') _delete(contact);
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: Text('Edit'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'remove',
+                                  child: Text('Remove'),
+                                ),
+                              ],
+                            ),
+                            onTap: () => _edit(contact),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactVoiceCaptureSheet extends StatefulWidget {
+  const _ContactVoiceCaptureSheet();
+
+  @override
+  State<_ContactVoiceCaptureSheet> createState() =>
+      _ContactVoiceCaptureSheetState();
+}
+
+class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
+  final SpeechToText _speech = SpeechToText();
+  String _transcript = '';
+  bool _holding = false;
+  bool _starting = false;
+  String? _error;
+
+  Future<void> _startListening() async {
+    if (_holding || _starting) return;
+    setState(() {
+      _holding = true;
+      _starting = true;
+      _error = null;
+      _transcript = '';
+    });
+    final available = await _speech.initialize(
+      onError: (error) {
+        if (mounted) setState(() => _error = error.errorMsg);
+      },
+    );
+    if (!mounted || !_holding || !available) {
+      if (mounted) {
+        setState(() {
+          _holding = false;
+          _starting = false;
+          _error ??= 'Microphone is not available.';
+        });
+      }
+      return;
+    }
+    setState(() => _starting = false);
+    await _speech.listen(
+      listenOptions: SpeechListenOptions(
+        localeId: 'en_IN',
+        partialResults: true,
+        cancelOnError: true,
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 8),
+      ),
+      onResult: (result) {
+        if (mounted) setState(() => _transcript = result.recognizedWords);
+      },
+    );
+  }
+
+  Future<void> _stopListening() async {
+    if (!_holding && !_starting) return;
+    setState(() => _holding = false);
+    await _speech.stop();
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    if (_transcript.trim().isEmpty) {
+      setState(
+        () => _error = 'No words heard. Hold while speaking and try again.',
+      );
+      return;
+    }
+    Navigator.pop(context, _transcript.trim());
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Add a contact by voice',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _holding
+                  ? 'Listening… release when you are done.'
+                  : 'Press and hold to speak.',
+            ),
+            const SizedBox(height: 22),
+            GestureDetector(
+              onLongPressStart: (_) => _startListening(),
+              onLongPressEnd: (_) => _stopListening(),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _holding
+                      ? const Color(0xFFB64E70)
+                      : const Color(0xFFF4BEC9),
+                ),
+                child: Icon(
+                  _holding ? Icons.mic : Icons.mic_none,
+                  size: 48,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _transcript.isEmpty
+                  ? 'Your words will appear here.'
+                  : _transcript,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Color(0xFF9D4664))),
+            ],
+          ],
+        ),
       ),
     );
   }
