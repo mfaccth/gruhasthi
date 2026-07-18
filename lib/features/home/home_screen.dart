@@ -354,7 +354,6 @@ class _HomeScreenState extends State<HomeScreen> {
               FutureBuilder<HouseholdData>(
                 future: _data,
                 builder: (context, snapshot) => _Header(
-                  userName: snapshot.data?.userName ?? '',
                   locality:
                       snapshot.data?.locality ?? 'Kundalahalli, Bengaluru',
                   onOpenSettings: _openSettings,
@@ -374,6 +373,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 460),
                         child: _VoiceHome(
+                          greeting: greetingForHour(
+                            DateTime.now().hour,
+                            snapshot.data!.userName,
+                          ),
                           onOpenGroceryLists: _openGroceryLists,
                           onOpenStores: _openStores,
                           onOpenContacts: _openContacts,
@@ -403,13 +406,8 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({
-    required this.userName,
-    required this.locality,
-    required this.onOpenSettings,
-  });
+  const _Header({required this.locality, required this.onOpenSettings});
 
-  final String userName;
   final String locality;
   final VoidCallback onOpenSettings;
 
@@ -421,17 +419,6 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                greetingForHour(DateTime.now().hour, userName),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(height: 3),
               Text(
                 locality,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -462,6 +449,7 @@ String greetingForHour(int hour, String userName) {
 
 class _VoiceHome extends StatelessWidget {
   const _VoiceHome({
+    required this.greeting,
     required this.onOpenGroceryLists,
     required this.onOpenStores,
     required this.onOpenContacts,
@@ -472,6 +460,7 @@ class _VoiceHome extends StatelessWidget {
     required this.liveTranscript,
   });
 
+  final String greeting;
   final VoidCallback onOpenGroceryLists;
   final VoidCallback onOpenStores;
   final VoidCallback onOpenContacts;
@@ -483,90 +472,143 @@ class _VoiceHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          isListening
-              ? (liveTranscript.isEmpty ? 'Listening…' : liveTranscript)
-              : 'What would you like to do?',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 350,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final centre = constraints.maxWidth / 2;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    top: 0,
-                    left: centre - 76,
-                    child: _RadialAction(
-                      label: 'Contacts',
-                      icon: Icons.contacts_outlined,
-                      backgroundColor: const Color(0xFFE5F3EE),
-                      onPressed: onOpenContacts,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final centre = constraints.maxWidth / 2;
+        final microphoneTop = (constraints.maxHeight - 120) / 2;
+        return SizedBox(
+          height: constraints.maxHeight,
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Text(
+                  greeting,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Positioned(
+                top: 36,
+                left: 0,
+                right: 0,
+                child: Text(
+                  'What can I do for you?',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (isListening)
+                Positioned(
+                  top: 68,
+                  left: 0,
+                  right: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    height: 72,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE5EA),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      liveTranscript.isEmpty
+                          ? 'Listening…'
+                          : liveTranscriptForDisplay(liveTranscript),
+                      maxLines: 3,
+                      overflow: TextOverflow.fade,
+                      softWrap: true,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                  Positioned(
-                    top: 0,
-                    left: centre + 8,
-                    child: _RadialAction(
-                      label: 'Stores',
-                      icon: Icons.storefront_outlined,
-                      backgroundColor: const Color(0xFFEEE7F7),
-                      onPressed: onOpenStores,
-                    ),
+                ),
+              Positioned(
+                top: microphoneTop,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: _VoiceTarget(
+                    onPressStart: onPressMicrophone,
+                    onPressEnd: onReleaseMicrophone,
+                    isListening: isListening,
                   ),
-                  Positioned(
-                    top: 92,
-                    left: 0,
-                    child: _RadialAction(
-                      label: 'Grocery lists',
-                      icon: Icons.shopping_basket_outlined,
-                      backgroundColor: const Color(0xFFFFF1C9),
-                      onPressed: onOpenGroceryLists,
-                    ),
-                  ),
-                  Positioned(
-                    top: 92,
-                    right: 0,
-                    child: _RadialAction(
-                      label: 'Pay',
-                      icon: Icons.currency_rupee,
-                      backgroundColor: const Color(0xFFF9E2E7),
-                      onPressed: onOpenPayments,
-                    ),
-                  ),
-                  Positioned(
-                    top: 195,
-                    left: centre - 60,
-                    child: _VoiceTarget(
-                      onPressStart: onPressMicrophone,
-                      onPressEnd: onReleaseMicrophone,
-                      isListening: isListening,
-                    ),
-                  ),
-                ],
-              );
-            },
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: centre - 76,
+                child: _RadialAction(
+                  label: 'Contacts',
+                  icon: Icons.contacts_outlined,
+                  backgroundColor: const Color(0xFFE5F3EE),
+                  onPressed: onOpenContacts,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: centre + 8,
+                child: _RadialAction(
+                  label: 'Stores',
+                  icon: Icons.storefront_outlined,
+                  backgroundColor: const Color(0xFFEEE7F7),
+                  onPressed: onOpenStores,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                child: _RadialAction(
+                  label: 'Grocery lists',
+                  icon: Icons.shopping_basket_outlined,
+                  backgroundColor: const Color(0xFFFFF1C9),
+                  onPressed: onOpenGroceryLists,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: _RadialAction(
+                  label: 'Pay',
+                  icon: Icons.currency_rupee,
+                  backgroundColor: const Color(0xFFF9E2E7),
+                  onPressed: onOpenPayments,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Try “Add milk to Village list”',
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF796C70)),
-        ),
-      ],
+        );
+      },
     );
   }
+}
+
+String liveTranscriptForDisplay(String transcript) {
+  const charactersPerLine = 22;
+  final words = transcript.trim().split(RegExp(r'\s+'));
+  final lines = <String>[];
+  var line = '';
+  for (final word in words) {
+    final next = line.isEmpty ? word : '$line $word';
+    if (line.isNotEmpty && next.length > charactersPerLine) {
+      lines.add(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line.isNotEmpty) lines.add(line);
+  return lines.join('\n');
 }
 
 class _RadialAction extends StatelessWidget {
@@ -685,6 +727,14 @@ class _VoiceTarget extends StatelessWidget {
               ? 'Listening… release to stop'
               : 'Press and hold to speak',
           style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Try “Add milk to Village list”',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF796C70)),
         ),
       ],
     );
