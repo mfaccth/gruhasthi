@@ -29,20 +29,14 @@ The model is not included in the APK. It is approximately 2.6 GB and must be
 downloaded separately from the [LiteRT Community Gemma 4 E2B model
 page](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm).
 
-After installing the debug app on a connected Android phone, copy the
-downloaded `gemma-4-E2B-it.litertlm` file to the phone with:
+On an Android phone, open **Settings → On-device Gemma (pilot)**. Choose
+**Download model**, download the exact `gemma-4-E2B-it.litertlm` file, then
+return to the app and choose **Choose downloaded file**. Android's document
+picker selects the file; Gruhasthi verifies and copies it into the app's
+private model location. The user does not need to access `Android/data` or run
+ADB commands. Use Wi-Fi and leave about 4 GB of free device storage.
 
-```bash
-/Users/manohar/Library/Android/sdk/platform-tools/adb shell \
-  mkdir -p /storage/emulated/0/Android/data/com.gruhasthi.gruhasthi/files/models
-
-/Users/manohar/Library/Android/sdk/platform-tools/adb push \
-  /path/to/gemma-4-E2B-it.litertlm \
-  /storage/emulated/0/Android/data/com.gruhasthi.gruhasthi/files/models/gemma-4-E2B-it.litertlm
-```
-
-Open **Settings → On-device Gemma (pilot)** and use **Check again** to confirm
-that the model is available. In a voice review sheet, select **Interpret with
+In a voice review sheet, select **Interpret with
 on-device Gemma (pilot)**. The model returns only a constrained local command;
 Gruhasthi validates it and still shows the usual review action.
 
