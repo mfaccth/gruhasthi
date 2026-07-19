@@ -63,7 +63,7 @@ sealed class VoiceCommand {
           .map(RegExp.escape)
           .join(r'\s*');
       final addPattern = RegExp(
-        '^add\\s+(.+?)\\s+to\\s+(?:the\\s+)?$flexibleStoreName(?:\\s+list)?[.!]?\\s*',
+        '^(?:please\\s+)?add\\s+(.+?)\\s+to\\s+(?:the\\s+)?$flexibleStoreName(?:\\s+list)?[.!]?\\s*',
       );
       final addMatch = addPattern.firstMatch(normalized);
       if (addMatch != null) {
@@ -212,7 +212,7 @@ class GroceryDetails {
 GroceryDetails groceryDetails(String value) {
   final normalized = value.trim();
   final match = RegExp(
-    r'^(?:(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(dozens|dozen|kilograms|kilogram|kgs|kg|litres|litre|liters|liter|counts|count|pieces|piece|packets|packet|l)?\s*(?:of\s+)?)?(.+)$',
+    r'^(?:(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(dozens|dozen|kilograms|kilogram|kilos|kilo|kgs|kg|litres|litre|liters|liter|counts|count|pieces|piece|packets|packet|l)?\s*(?:of\s+)?)?(.+)$',
     caseSensitive: false,
   ).firstMatch(normalized);
   if (match == null) {
@@ -254,7 +254,14 @@ GroceryQuantityUnit groceryUnitFromValue(String value) {
   if (const {'dozen', 'dozens'}.contains(normalized)) {
     return GroceryQuantityUnit.dozen;
   }
-  if (const {'kg', 'kgs', 'kilogram', 'kilograms'}.contains(normalized)) {
+  if (const {
+    'kg',
+    'kgs',
+    'kilo',
+    'kilos',
+    'kilogram',
+    'kilograms',
+  }.contains(normalized)) {
     return GroceryQuantityUnit.kilogram;
   }
   if (const {'l', 'litre', 'litres', 'liter', 'liters'}.contains(normalized)) {
