@@ -9,6 +9,7 @@ import '../grocery/grocery_lists_screen.dart';
 import '../payments/payment_recipients_screen.dart';
 import '../settings/settings_screen.dart';
 import '../stores/stores_screen.dart';
+import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +29,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<HouseholdData> _data;
   final SpeechToText _holdToTalkSpeech = SpeechToText();
+  final GemmaCommandInterpreter _gemmaInterpreter =
+      const GemmaCommandInterpreter();
   bool _holdingMicrophone = false;
   bool _startingHoldToTalk = false;
   bool _speechListening = false;
@@ -120,6 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openVoice({String initialTranscript = ''}) async {
     final data = await widget.repository.load();
     if (!mounted) return;
+    if (await _tryHandleContactVoice(initialTranscript, data) || !mounted) {
+      return;
+    }
     final command = await showModalBottomSheet<VoiceCommand>(
       context: context,
       showDragHandle: true,
@@ -169,6 +175,143 @@ class _HomeScreenState extends State<HomeScreen> {
       case AddStoreVoiceCommand(:final name, :final whatsAppNumber):
         await _openStoresForVoice(name, whatsAppNumber);
       case UnrecognizedVoiceCommand():
+        break;
+    }
+  }
+
+  Future<bool> _tryHandleContactVoice(
+    String transcript,
+    HouseholdData data,
+  ) async {
+    final ruleCommand = VoiceCommand.fromTranscript(
+      transcript,
+      data.stores.map((store) => store.name).toList(growable: false),
+    );
+    if (ruleCommand case AddContactVoiceCommand(
+      :final name,
+      :final phoneNumber,
+    ) when name.trim().isNotEmpty) {
+      await _openContactsForVoice(name, phoneNumber);
+      return true;
+    }
+    if (!RegExp(r'\bcontact\b', caseSensitive: false).hasMatch(transcript)) {
+      return false;
+    }
+
+    final gemmaStatus = await _gemmaInterpreter.status();
+    if (!mounted) return true;
+    if (!gemmaStatus.isReady) {
+      await _showContactVoiceFailure(
+        transcript,
+        'I could not identify a contact from that request. Gemma is not installed on this phone.',
+      );
+      return true;
+    }
+
+    _showGemmaWorking();
+    try {
+      final response = await _gemmaInterpreter.interpret(
+        transcript: transcript,
+        storeNames: data.stores
+            .map((store) => store.name)
+            .toList(growable: false),
+      );
+      final command = VoiceCommand.fromGemmaResult(
+        response,
+        data.stores.map((store) => store.name).toList(growable: false),
+        transcript: transcript,
+      );
+      if (!mounted) return true;
+      Navigator.of(context, rootNavigator: true).pop();
+      if (command case AddContactVoiceCommand(
+        :final name,
+        :final phoneNumber,
+      ) when name.trim().isNotEmpty) {
+        await _openContactsForVoice(name, phoneNumber);
+        return true;
+      }
+      await _showContactVoiceFailure(
+        transcript,
+        'I could not identify a contact from that request.',
+      );
+    } on Exception catch (_) {
+      if (!mounted) return true;
+      Navigator.of(context, rootNavigator: true).pop();
+      await _showContactVoiceFailure(
+        transcript,
+        'I could not understand that request on this device.',
+      );
+    }
+    return true;
+  }
+
+  void _showGemmaWorking() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Dialog(
+        alignment: Alignment(0, -0.34),
+        backgroundColor: Color(0xFFFFF4C8),
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(color: Color(0xFF8F3555)),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Understanding with Gemma on this device…',
+                  style: TextStyle(
+                    color: Color(0xFF42363A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showContactVoiceFailure(
+    String transcript,
+    String message,
+  ) async {
+    final action = await showDialog<_ContactVoiceFailureAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Could not add contact'),
+        content: Text('$message\n\nI heard:\n“$transcript”'),
+        actions: [
+          OutlinedButton(
+            onPressed: () =>
+                Navigator.pop(context, _ContactVoiceFailureAction.retry),
+            child: const Text('Try again'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _ContactVoiceFailureAction.manual),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB64E70),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Add manually'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _ContactVoiceFailureAction.manual:
+        await _openContactsForVoice('', '');
+      case _ContactVoiceFailureAction.retry:
+      case null:
         break;
     }
   }
@@ -410,6 +553,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+enum _ContactVoiceFailureAction { retry, manual }
 
 class _Header extends StatelessWidget {
   const _Header({
