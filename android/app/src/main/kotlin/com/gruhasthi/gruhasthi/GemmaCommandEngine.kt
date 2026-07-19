@@ -21,7 +21,22 @@ import java.io.InputStream
  */
 class GemmaCommandEngine(private val context: Context) : Closeable {
     companion object {
-        const val modelFileName = "gemma-4-E2B-it.litertlm"
+        const val defaultModelId = "e2b"
+
+        private val modelSpecs = mapOf(
+            "e2b" to GemmaModelSpec(
+                id = "e2b",
+                displayName = "Gemma 4 E2B",
+                fileName = "gemma-4-E2B-it.litertlm",
+            ),
+            "e4b" to GemmaModelSpec(
+                id = "e4b",
+                displayName = "Gemma 4 E4B",
+                fileName = "gemma-4-E4B-it.litertlm",
+            ),
+        )
+
+        fun expectedFileName(modelId: String): String? = modelSpecs[modelId]?.fileName
 
         private const val systemInstruction = """
             You interpret spoken commands for a local household app.
@@ -45,28 +60,34 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
     private var loadedModelPath: String? = null
 
     fun status(): Map<String, Any> {
-        val file = modelFile()
+        val activeSpec = activeModelSpec()
+        val displaySpec = activeSpec ?: modelSpecs.getValue(defaultModelId)
+        val file = modelFile(displaySpec)
         return mapOf(
-            "ready" to file.isFile,
+            "ready" to (activeSpec != null),
             "modelPath" to file.absolutePath,
-            "modelFileName" to modelFileName,
+            "modelId" to displaySpec.id,
+            "modelDisplayName" to displaySpec.displayName,
+            "modelFileName" to displaySpec.fileName,
             "sizeBytes" to if (file.isFile) file.length() else 0L,
         )
     }
 
     /** Copies the selected LiteRT-LM file into the app-owned model directory. */
-    fun installModel(sourceName: String, source: InputStream): Map<String, Any> {
-        require(sourceName == modelFileName) {
-            "Choose the $modelFileName model file."
+    fun installModel(modelId: String, sourceName: String, source: InputStream): Map<String, Any> {
+        val selectedSpec = modelSpecs[modelId]
+            ?: throw IllegalArgumentException("Choose a supported Gemma model.")
+        require(sourceName == selectedSpec.fileName) {
+            "Choose the ${selectedSpec.fileName} model file."
         }
 
-        val target = modelFile()
+        val target = modelFile(selectedSpec)
         val temporary = File(target.parentFile, "${target.name}.part")
         temporary.delete()
         try {
             temporary.outputStream().use { output -> source.copyTo(output) }
             require(temporary.length() >= 100L * 1024 * 1024) {
-                "That file is too small to be the Gemma model. Download it again and choose $modelFileName."
+                "That file is too small to be the Gemma model. Download it again and choose ${selectedSpec.fileName}."
             }
 
             synchronized(lock) {
@@ -75,6 +96,10 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
                 loadedModelPath = null
             }
             replaceModelFile(temporary, target)
+            modelSpecs.values
+                .filter { it.id != selectedSpec.id }
+                .forEach { modelFile(it).delete() }
+            preferences().edit().putString("active_model_id", selectedSpec.id).apply()
             return status()
         } catch (exception: Exception) {
             temporary.delete()
@@ -84,10 +109,9 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
 
     fun interpret(transcript: String, storeNames: List<String>): Map<String, Any> {
         require(transcript.isNotBlank()) { "Say or type a command first." }
-        val model = modelFile()
-        if (!model.isFile) {
-            throw ModelUnavailableException("Gemma 4 E2B has not been installed on this device.")
-        }
+        val selectedSpec = activeModelSpec()
+            ?: throw ModelUnavailableException("A Gemma model has not been installed on this device.")
+        val model = modelFile(selectedSpec)
 
         val prompt = buildString {
             appendLine("Known stores: ${storeNames.joinToString(", ")}")
@@ -153,10 +177,21 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         }
     }
 
-    private fun modelFile(): File {
+    private fun activeModelSpec(): GemmaModelSpec? {
+        val selectedId = preferences().getString("active_model_id", null)
+        modelSpecs[selectedId]?.let { selected ->
+            if (modelFile(selected).isFile) return selected
+        }
+        // Existing E2B installs pre-date the active-model preference.
+        return modelSpecs.values.firstOrNull { modelFile(it).isFile }
+    }
+
+    private fun preferences() = context.getSharedPreferences("gemma_model", Context.MODE_PRIVATE)
+
+    private fun modelFile(spec: GemmaModelSpec): File {
         val directory = context.getExternalFilesDir("models") ?: File(context.filesDir, "models")
         directory.mkdirs()
-        return File(directory, modelFileName)
+        return File(directory, spec.fileName)
     }
 
     private fun replaceModelFile(temporary: File, target: File) {
@@ -180,5 +215,11 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         return value.substring(first, last + 1)
     }
 }
+
+private data class GemmaModelSpec(
+    val id: String,
+    val displayName: String,
+    val fileName: String,
+)
 
 class ModelUnavailableException(message: String) : IllegalStateException(message)

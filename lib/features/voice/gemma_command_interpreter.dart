@@ -1,15 +1,65 @@
 import 'package:flutter/services.dart';
 
+enum GemmaModel {
+  e2b(
+    id: 'e2b',
+    displayName: 'Gemma 4 E2B',
+    fileName: 'gemma-4-E2B-it.litertlm',
+    downloadSize: 'about 2.6 GB',
+    storageGuidance: 'Keep about 6 GB of free storage while installing.',
+    description: 'Recommended — smaller and faster for most phones.',
+    modelPage:
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm',
+  ),
+  e4b(
+    id: 'e4b',
+    displayName: 'Gemma 4 E4B',
+    fileName: 'gemma-4-E4B-it.litertlm',
+    downloadSize: '3.66 GB',
+    storageGuidance:
+        'Keep about 10 GB of free storage while replacing a model.',
+    description:
+        'Higher capability (pilot) — needs a capable phone and more memory.',
+    modelPage:
+        'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm',
+  );
+
+  const GemmaModel({
+    required this.id,
+    required this.displayName,
+    required this.fileName,
+    required this.downloadSize,
+    required this.storageGuidance,
+    required this.description,
+    required this.modelPage,
+  });
+
+  final String id;
+  final String displayName;
+  final String fileName;
+  final String downloadSize;
+  final String storageGuidance;
+  final String description;
+  final String modelPage;
+
+  static GemmaModel fromId(String id) => GemmaModel.values.firstWhere(
+    (model) => model.id == id,
+    orElse: () => e2b,
+  );
+}
+
 class GemmaModelStatus {
   const GemmaModelStatus({
     required this.isReady,
     required this.modelPath,
+    required this.model,
     required this.modelFileName,
     required this.sizeBytes,
   });
 
   final bool isReady;
   final String modelPath;
+  final GemmaModel model;
   final String modelFileName;
   final int sizeBytes;
 
@@ -17,6 +67,7 @@ class GemmaModelStatus {
     return GemmaModelStatus(
       isReady: values['ready'] == true,
       modelPath: values['modelPath'] as String? ?? '',
+      model: GemmaModel.fromId(values['modelId'] as String? ?? 'e2b'),
       modelFileName: values['modelFileName'] as String? ?? '',
       sizeBytes: (values['sizeBytes'] as num?)?.toInt() ?? 0,
     );
@@ -25,6 +76,7 @@ class GemmaModelStatus {
   static const unavailable = GemmaModelStatus(
     isReady: false,
     modelPath: '',
+    model: GemmaModel.e2b,
     modelFileName: 'gemma-4-E2B-it.litertlm',
     sizeBytes: 0,
   );
@@ -56,9 +108,10 @@ class GemmaCommandInterpreter {
 
   /// Opens Android's document picker and imports the approved model file into
   /// Gruhasthi's private model storage.
-  Future<GemmaModelStatus> pickAndInstallModel() async {
+  Future<GemmaModelStatus> pickAndInstallModel(GemmaModel model) async {
     final response = await _channel.invokeMapMethod<Object?, Object?>(
       'pickAndInstallModel',
+      {'modelId': model.id},
     );
     if (response == null) {
       throw PlatformException(

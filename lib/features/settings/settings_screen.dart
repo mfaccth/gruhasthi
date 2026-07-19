@@ -55,19 +55,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showGemmaSetup(GemmaModelStatus status) async {
-    final action = await showDialog<GemmaSetupAction>(
+    final selection = await showDialog<GemmaSetupSelection>(
       context: context,
       builder: (_) => GemmaSetupDialog(status: status),
     );
-    if (action != GemmaSetupAction.chooseFile || !mounted) return;
+    if (selection == null || !mounted) return;
 
     setState(() => _installingGemma = true);
     try {
-      final installed = await _gemmaInterpreter.pickAndInstallModel();
+      final installed = await _gemmaInterpreter.pickAndInstallModel(
+        selection.model,
+      );
       if (!mounted) return;
       setState(() => _gemmaStatus = Future.value(installed));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gemma is installed and ready to use.')),
+        SnackBar(
+          content: Text(
+            '${installed.model.displayName} is installed and ready.',
+          ),
+        ),
       );
     } on PlatformException catch (exception) {
       if (!mounted || exception.code == 'MODEL_PICK_CANCELLED') return;
@@ -136,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _installingGemma
                             ? 'Installing the selected model. This may take a few minutes.'
                             : gemma.isReady
-                            ? 'Gemma 4 E2B is ready for private command interpretation.'
+                            ? '${gemma.model.displayName} is ready for private command interpretation.'
                             : 'Not installed. Tap to set up the optional pilot model.',
                       ),
                       trailing: Icon(
@@ -161,47 +167,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-enum GemmaSetupAction { chooseFile }
+class GemmaSetupSelection {
+  const GemmaSetupSelection(this.model);
 
-class GemmaSetupDialog extends StatelessWidget {
+  final GemmaModel model;
+}
+
+class GemmaSetupDialog extends StatefulWidget {
   const GemmaSetupDialog({super.key, required this.status});
 
   final GemmaModelStatus status;
 
-  static final _modelPage = Uri.parse(
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm',
-  );
+  @override
+  State<GemmaSetupDialog> createState() => _GemmaSetupDialogState();
+}
+
+class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
+  late GemmaModel _selectedModel;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedModel = widget.status.isReady
+        ? widget.status.model
+        : GemmaModel.e2b;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final isReplacing = widget.status.isReady;
     return AlertDialog(
       title: const Text('On-device Gemma pilot'),
       content: SingleChildScrollView(
-        child: Text.rich(
-          TextSpan(
-            style: Theme.of(context).textTheme.bodyMedium,
-            children: [
-              const TextSpan(
-                text:
-                    'Gemma interprets a voice transcript entirely on this phone. It is optional and does not replace the review step.\n\n',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Gemma interprets a voice transcript privately on this phone. It remains optional and never replaces review.',
+            ),
+            const SizedBox(height: 14),
+            RadioGroup<GemmaModel>(
+              groupValue: _selectedModel,
+              onChanged: (value) => setState(() => _selectedModel = value!),
+              child: Column(
+                children: [
+                  for (final model in GemmaModel.values)
+                    RadioListTile<GemmaModel>(
+                      value: model,
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: const Color(0xFFB64E70),
+                      title: Text(model.displayName),
+                      subtitle: Text(
+                        '${model.description}\n${model.downloadSize} · ${model.storageGuidance}',
+                      ),
+                    ),
+                ],
               ),
-              const TextSpan(
-                text:
-                    '1. Download the LiteRT-LM Gemma 4 E2B model (about 2.6 GB) from the approved model page.\n2. Return here and choose ',
-              ),
-              TextSpan(
-                text: status.isReady
-                    ? 'Replace model'
-                    : 'Choose downloaded file',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const TextSpan(
-                text:
-                    '. Gruhasthi will validate the file and copy it to the correct private location automatically.\n\n'
-                    'Use Wi-Fi and keep about 4 GB of free device storage. The file must be named gemma-4-E2B-it.litertlm.',
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '1. Download the selected model.\n2. Return here and choose the downloaded ${_selectedModel.fileName} file. Gruhasthi validates it and replaces the active model automatically.',
+            ),
+          ],
         ),
       ),
       actions: [
@@ -214,19 +242,20 @@ class GemmaSetupDialog extends StatelessWidget {
           child: const Text('Cancel'),
         ),
         TextButton(
-          onPressed: () =>
-              launchUrl(_modelPage, mode: LaunchMode.externalApplication),
-          child: const Text('Download model'),
+          onPressed: () => launchUrl(
+            Uri.parse(_selectedModel.modelPage),
+            mode: LaunchMode.externalApplication,
+          ),
+          child: const Text('Download selected'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, GemmaSetupAction.chooseFile),
+          onPressed: () =>
+              Navigator.pop(context, GemmaSetupSelection(_selectedModel)),
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFFB64E70),
             foregroundColor: Colors.white,
           ),
-          child: Text(
-            status.isReady ? 'Replace model' : 'Choose downloaded file',
-          ),
+          child: Text(isReplacing ? 'Replace model' : 'Choose file'),
         ),
       ],
     );
