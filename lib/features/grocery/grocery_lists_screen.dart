@@ -38,6 +38,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     String initialItem = '',
     String initialQuantity = '',
     GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
+    bool voiceReview = false,
   }) async {
     await Navigator.push<void>(
       context,
@@ -48,6 +49,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
           initialItem: initialItem,
           initialQuantity: initialQuantity,
           initialUnit: initialUnit,
+          voiceReview: voiceReview,
         ),
       ),
     );
@@ -175,6 +177,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
           initialItem: item,
           initialQuantity: quantity,
           initialUnit: unit,
+          voiceReview: true,
         );
         return true;
       case OpenGroceryVoiceCommand(:final storeName):
@@ -701,6 +704,7 @@ class GroceryListEditor extends StatefulWidget {
     this.initialItem = '',
     this.initialQuantity = '',
     this.initialUnit = GroceryQuantityUnit.count,
+    this.voiceReview = false,
   });
 
   final HouseholdRepository repository;
@@ -708,6 +712,7 @@ class GroceryListEditor extends StatefulWidget {
   final String initialItem;
   final String initialQuantity;
   final GroceryQuantityUnit initialUnit;
+  final bool voiceReview;
 
   @override
   State<GroceryListEditor> createState() => _GroceryListEditorState();
@@ -725,10 +730,23 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   @override
   void initState() {
     super.initState();
+    _unit = widget.initialUnit;
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _load();
+    if (!mounted) return;
+    if (widget.voiceReview) {
+      await _reviewVoiceItem(
+        item: widget.initialItem,
+        quantity: widget.initialQuantity,
+        unit: widget.initialUnit,
+      );
+      return;
+    }
     _itemController.text = widget.initialItem;
     _quantityController.text = widget.initialQuantity;
-    _unit = widget.initialUnit;
-    _load();
   }
 
   Future<void> _load() async {
@@ -743,10 +761,24 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   Future<void> _addItem() async {
     final name = _itemController.text.trim();
     if (name.isEmpty) return;
+    await _saveItem(
+      name: name,
+      quantity: _quantityController.text.trim(),
+      unit: _unit,
+    );
+    _itemController.clear();
+    _quantityController.clear();
+  }
+
+  Future<void> _saveItem({
+    required String name,
+    required String quantity,
+    required GroceryQuantityUnit unit,
+  }) async {
     final item = GroceryItem(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
-      quantity: groceryQuantityLabel(_quantityController.text.trim(), _unit),
+      quantity: groceryQuantityLabel(quantity, unit),
     );
     final data = await widget.repository.load();
     final updated = [...data.itemsFor(widget.store.id), item];
@@ -755,8 +787,6 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
         itemsByStore: {...data.itemsByStore, widget.store.id: updated},
       ),
     );
-    _itemController.clear();
-    _quantityController.clear();
     if (mounted) setState(() => _items = updated);
   }
 
@@ -787,7 +817,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     final command = VoiceCommand.fromTranscript(contextualTranscript, [
       widget.store.name,
     ]);
-    if (_applyVoiceCommand(command)) return;
+    if (await _applyVoiceCommand(command)) return;
 
     final gemmaStatus = await _gemmaInterpreter.status();
     if (!mounted) return;
@@ -810,7 +840,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
       ], transcript: contextualTranscript);
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      if (_applyVoiceCommand(gemmaCommand)) return;
+      if (await _applyVoiceCommand(gemmaCommand)) return;
       await _showVoiceFailure(
         transcript,
         'I could not identify a grocery item from that request.',
@@ -842,16 +872,34 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     return '$request to ${widget.store.name}';
   }
 
-  bool _applyVoiceCommand(VoiceCommand command) {
+  Future<bool> _applyVoiceCommand(VoiceCommand command) async {
     if (command is! AddGroceryVoiceCommand || command.item.trim().isEmpty) {
       return false;
     }
-    setState(() {
-      _itemController.text = command.item;
-      _quantityController.text = command.quantity;
-      _unit = command.unit;
-    });
+    await _reviewVoiceItem(
+      item: command.item,
+      quantity: command.quantity,
+      unit: command.unit,
+    );
     return true;
+  }
+
+  Future<void> _reviewVoiceItem({
+    required String item,
+    required String quantity,
+    required GroceryQuantityUnit unit,
+  }) async {
+    final draft = await showDialog<_VoiceGroceryDraft>(
+      context: context,
+      builder: (_) =>
+          _VoiceGroceryItemDialog(item: item, quantity: quantity, unit: unit),
+    );
+    if (draft == null || !mounted) return;
+    await _saveItem(
+      name: draft.item,
+      quantity: draft.quantity,
+      unit: draft.unit,
+    );
   }
 
   void _showGemmaWorking() {
@@ -1072,6 +1120,149 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _VoiceGroceryDraft {
+  const _VoiceGroceryDraft({
+    required this.item,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String item;
+  final String quantity;
+  final GroceryQuantityUnit unit;
+}
+
+class _VoiceGroceryItemDialog extends StatefulWidget {
+  const _VoiceGroceryItemDialog({
+    required this.item,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String item;
+  final String quantity;
+  final GroceryQuantityUnit unit;
+
+  @override
+  State<_VoiceGroceryItemDialog> createState() =>
+      _VoiceGroceryItemDialogState();
+}
+
+class _VoiceGroceryItemDialogState extends State<_VoiceGroceryItemDialog> {
+  late final TextEditingController _itemController;
+  late final TextEditingController _quantityController;
+  late GroceryQuantityUnit _unit;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemController = TextEditingController(text: widget.item);
+    _quantityController = TextEditingController(text: widget.quantity);
+    _unit = widget.unit;
+  }
+
+  @override
+  void dispose() {
+    _itemController.dispose();
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add this item?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _itemController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Grocery item'),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _quantityController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity (optional)',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<GroceryQuantityUnit>(
+                    key: ValueKey(_unit),
+                    initialValue: _unit,
+                    decoration: const InputDecoration(labelText: 'Unit'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.count,
+                        child: Text('Count'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.dozen,
+                        child: Text('Dozen'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.kilogram,
+                        child: Text('kg'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.litre,
+                        child: Text('litre'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _unit = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF43383B),
+            side: const BorderSide(color: Color(0xFF43383B)),
+          ),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final item = _itemController.text.trim();
+            if (item.isEmpty) return;
+            Navigator.pop(
+              context,
+              _VoiceGroceryDraft(
+                item: item,
+                quantity: _quantityController.text.trim(),
+                unit: _unit,
+              ),
+            );
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFB64E70),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

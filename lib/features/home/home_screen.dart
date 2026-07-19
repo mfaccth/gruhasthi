@@ -167,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
             initialItem: item,
             initialQuantity: quantity,
             initialUnit: unit,
+            voiceReview: true,
           );
         }
       case AddContactVoiceCommand(:final name, :final phoneNumber):
@@ -269,6 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
           initialItem: item,
           initialQuantity: quantity,
           initialUnit: unit,
+          voiceReview: true,
         );
         return true;
       }
@@ -311,6 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
             initialItem: item,
             initialQuantity: quantity,
             initialUnit: unit,
+            voiceReview: true,
           );
           return true;
         }
@@ -603,6 +606,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String initialItem = '',
     String initialQuantity = '',
     GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
+    bool voiceReview = false,
   }) async {
     await Navigator.push<void>(
       context,
@@ -613,6 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
           initialItem: initialItem,
           initialQuantity: initialQuantity,
           initialUnit: initialUnit,
+          voiceReview: voiceReview,
         ),
       ),
     );
