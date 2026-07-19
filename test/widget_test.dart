@@ -113,6 +113,24 @@ void main() {
     expect(addCommand.phoneNumber, '9876543210');
   });
 
+  test('recognizes a request to open contacts', () {
+    expect(
+      VoiceCommand.fromTranscript('Show me contacts', const []),
+      isA<OpenContactsVoiceCommand>(),
+    );
+    expect(
+      VoiceCommand.fromTranscript('Go to contacts list', const []),
+      isA<OpenContactsVoiceCommand>(),
+    );
+  });
+
+  test('maps Gemma open_contacts to the contacts navigation command', () {
+    expect(
+      VoiceCommand.fromGemmaResult(const {'action': 'open_contacts'}, const []),
+      isA<OpenContactsVoiceCommand>(),
+    );
+  });
+
   test('recognizes a contact command with a directly spoken phone number', () {
     final command = VoiceCommand.fromTranscript(
       'add contact Manohar 9845 598 745',

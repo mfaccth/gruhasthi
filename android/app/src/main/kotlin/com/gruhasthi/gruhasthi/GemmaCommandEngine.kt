@@ -11,6 +11,7 @@ import com.google.ai.edge.litertlm.SamplerConfig
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
+import java.io.InputStream
 
 /**
  * A narrow, local-only Gemma adapter for the proof of concept.
@@ -25,14 +26,16 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         private const val systemInstruction = """
             You interpret spoken commands for a local household app.
             Return exactly one JSON object and nothing else. Never include markdown.
-            Allowed actions: add_grocery, open_grocery, add_contact, open_stores, add_store, unknown.
+            Allowed actions: add_grocery, open_grocery, add_contact, open_stores, open_contacts, add_store, unknown.
             For add_grocery use action, store, item, quantity, unit.
             Quantity is an optional number. Unit must be count, dozen, kg, or litre.
             Put only the grocery name in item; do not include its quantity or unit.
             For open_grocery use action, store (or an empty string for all lists).
+            For open_contacts and open_stores, action alone is enough.
+            Example: "show me contacts" must return {"action":"open_contacts"}.
             For add_contact use action, name, phoneNumber.
             For add_store use action, name, whatsAppNumber.
-            For open_stores and unknown, action alone is enough.
+            For unknown, action alone is enough.
             Do not propose payment, messaging, deletion, or any action outside this list.
         """
     }
@@ -81,7 +84,7 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
             .joinToString(separator = "") { it.text }
         val parsed = JSONObject(extractJson(responseText))
         val action = parsed.optString("action").trim()
-        if (action !in setOf("add_grocery", "open_grocery", "add_contact", "open_stores", "add_store", "unknown")) {
+        if (action !in setOf("add_grocery", "open_grocery", "add_contact", "open_stores", "open_contacts", "add_store", "unknown")) {
             throw IllegalArgumentException("Gemma returned an unsupported action.")
         }
 
@@ -127,13 +130,5 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         directory.mkdirs()
         return File(directory, modelFileName)
     }
-
-    private fun extractJson(value: String): String {
-        val first = value.indexOf('{')
-        val last = value.lastIndexOf('}')
-        if (first < 0 || last <= first) throw IllegalArgumentException("Gemma did not return a command.")
-        return value.substring(first, last + 1)
-    }
-}
 
 class ModelUnavailableException(message: String) : IllegalStateException(message)

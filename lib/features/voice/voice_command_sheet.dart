@@ -32,6 +32,11 @@ sealed class VoiceCommand {
     if (RegExp(r'^open\s+(?:the\s+)?stores?[.!]?$').hasMatch(normalized)) {
       return const OpenStoresVoiceCommand();
     }
+    if (RegExp(
+      r'^(?:show(?:\s+me)?|go\s+to|open)(?:\s+the)?\s+contacts?(?:\s+list)?[.!]?$',
+    ).hasMatch(normalized)) {
+      return const OpenContactsVoiceCommand();
+    }
     final addStoreWithWhatsAppMatch = RegExp(
       r'^(?:please\s+)?add\s+(?:a\s+|the\s+)?store\s+(.+?)\s+whats\s*app\s+(?:number\s+)?(?:is\s+)?(.+)$',
     ).firstMatch(normalized);
@@ -121,6 +126,7 @@ sealed class VoiceCommand {
         phoneNumber: phone,
       ),
       'open_stores' => const OpenStoresVoiceCommand(),
+      'open_contacts' => const OpenContactsVoiceCommand(),
       'add_store' when name.isNotEmpty => AddStoreVoiceCommand(
         name: displayContactName(name),
         whatsAppNumber: whatsApp,
@@ -293,6 +299,10 @@ class OpenStoresVoiceCommand extends VoiceCommand {
   const OpenStoresVoiceCommand();
 }
 
+class OpenContactsVoiceCommand extends VoiceCommand {
+  const OpenContactsVoiceCommand();
+}
+
 class AddStoreVoiceCommand extends VoiceCommand {
   const AddStoreVoiceCommand({required this.name, this.whatsAppNumber = ''});
 
@@ -327,6 +337,7 @@ class _VoiceCommandSheetState extends State<VoiceCommandSheet> {
   GemmaModelStatus? _gemmaStatus;
   VoiceCommand? _gemmaCommand;
   int? _gemmaElapsedMs;
+  bool _usedRuleFallback = false;
   bool _interpretingWithGemma = false;
 
   @override
@@ -360,16 +371,27 @@ class _VoiceCommandSheetState extends State<VoiceCommandSheet> {
         transcript: _transcript,
         storeNames: widget.storeNames,
       );
-      final command = VoiceCommand.fromGemmaResult(
+      final gemmaCommand = VoiceCommand.fromGemmaResult(
         response,
         widget.storeNames,
         transcript: _transcript,
       );
+      final ruleCommand = VoiceCommand.fromTranscript(
+        _transcript,
+        widget.storeNames,
+      );
+      final useRuleFallback =
+          gemmaCommand is UnrecognizedVoiceCommand &&
+          ruleCommand is! UnrecognizedVoiceCommand;
+      final command = useRuleFallback ? ruleCommand : gemmaCommand;
       if (!mounted) return;
       setState(() {
         _gemmaCommand = command;
         _gemmaElapsedMs = (response['elapsedMs'] as num?)?.toInt();
-        _status = command is UnrecognizedVoiceCommand
+        _usedRuleFallback = useRuleFallback;
+        _status = useRuleFallback
+            ? 'Gemma was unsure, but this command was safely recognised.'
+            : command is UnrecognizedVoiceCommand
             ? 'Gemma could not safely match this request. The usual review is still available.'
             : 'Understood on this device with Gemma. Please review before continuing.';
       });
@@ -412,6 +434,7 @@ class _VoiceCommandSheetState extends State<VoiceCommandSheet> {
                   _transcript = value;
                   _gemmaCommand = null;
                   _gemmaElapsedMs = null;
+                  _usedRuleFallback = false;
                   _status = 'Review what I heard.';
                 }),
                 textCapitalization: TextCapitalization.sentences,
@@ -444,6 +467,7 @@ class _VoiceCommandSheetState extends State<VoiceCommandSheet> {
               _GemmaResultCard(
                 command: _gemmaCommand!,
                 elapsedMs: _gemmaElapsedMs,
+                usedRuleFallback: _usedRuleFallback,
               ),
             ],
             if (canReview) ...[
@@ -464,10 +488,15 @@ class _VoiceCommandSheetState extends State<VoiceCommandSheet> {
 }
 
 class _GemmaResultCard extends StatelessWidget {
-  const _GemmaResultCard({required this.command, required this.elapsedMs});
+  const _GemmaResultCard({
+    required this.command,
+    required this.elapsedMs,
+    required this.usedRuleFallback,
+  });
 
   final VoiceCommand command;
   final int? elapsedMs;
+  final bool usedRuleFallback;
 
   @override
   Widget build(BuildContext context) {
@@ -487,6 +516,7 @@ class _GemmaResultCard extends StatelessWidget {
             : 'Add contact $name: $phoneNumber',
       ),
       OpenStoresVoiceCommand() => (Icons.storefront_outlined, 'Open stores'),
+      OpenContactsVoiceCommand() => (Icons.contacts_outlined, 'Open contacts'),
       AddStoreVoiceCommand(:final name, :final whatsAppNumber) => (
         Icons.add_business_outlined,
         whatsAppNumber.isEmpty
@@ -513,7 +543,9 @@ class _GemmaResultCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Gemma interpreted',
+                    usedRuleFallback
+                        ? 'Built-in command match'
+                        : 'Gemma interpreted',
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: const Color(0xFF8F3555),
                     ),
@@ -566,6 +598,11 @@ class _CommandReview extends StatelessWidget {
           onPressed: () => Navigator.pop(context, command),
           child: const Text('Open stores'),
         );
+      case OpenContactsVoiceCommand():
+        return FilledButton(
+          onPressed: () => Navigator.pop(context, command),
+          child: const Text('Open contacts'),
+        );
       case AddStoreVoiceCommand(:final name):
         return FilledButton(
           onPressed: () => Navigator.pop(context, command),
@@ -583,9 +620,7 @@ class _CommandReview extends StatelessWidget {
           ),
         );
       case UnrecognizedVoiceCommand():
-        return const Text(
-          'Try “Add contact Manohar, phone number 9876543210.”',
-        );
+        return const SizedBox.shrink();
     }
   }
 }
