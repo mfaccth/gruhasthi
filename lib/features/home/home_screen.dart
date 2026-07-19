@@ -164,6 +164,8 @@ class _HomeScreenState extends State<HomeScreen> {
         await _openContactsForVoice(name, phoneNumber);
       case OpenStoresVoiceCommand():
         await _openStores();
+      case OpenContactsVoiceCommand():
+        await _openContacts();
       case AddStoreVoiceCommand(:final name, :final whatsAppNumber):
         await _openStoresForVoice(name, whatsAppNumber);
       case UnrecognizedVoiceCommand():
