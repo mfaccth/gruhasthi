@@ -436,6 +436,8 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const _GruhasthiBrand(),
+              const SizedBox(height: 2),
               Text(
                 locality,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -495,6 +497,47 @@ class _Header extends StatelessWidget {
               label: 'Settings',
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+/// A compact home-and-microphone mark for the voice-led household app.
+class _GruhasthiBrand extends StatelessWidget {
+  const _GruhasthiBrand();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 34,
+          height: 34,
+          child: Stack(
+            alignment: Alignment.center,
+            children: const [
+              Icon(Icons.home_outlined, size: 34, color: Color(0xFFFFD969)),
+              Positioned(
+                top: 11,
+                child: Icon(
+                  Icons.mic_none_rounded,
+                  size: 14,
+                  color: Color(0xFFB64E70),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Gruhasthi',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: const Color(0xFF8F3555),
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+          ),
         ),
       ],
     );
