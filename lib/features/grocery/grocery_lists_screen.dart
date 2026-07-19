@@ -5,6 +5,7 @@ import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
 import '../whatsapp/whatsapp_message.dart';
 import '../whatsapp/whatsapp_preview_screen.dart';
+import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
 import '../stores/stores_screen.dart';
 
@@ -19,6 +20,8 @@ class GroceryListsScreen extends StatefulWidget {
 
 class _GroceryListsScreenState extends State<GroceryListsScreen> {
   late Future<HouseholdData> _data;
+  final GemmaCommandInterpreter _gemmaInterpreter =
+      const GemmaCommandInterpreter();
 
   @override
   void initState() {
@@ -35,6 +38,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     String initialItem = '',
     String initialQuantity = '',
     GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
+    bool voiceReview = false,
   }) async {
     await Navigator.push<void>(
       context,
@@ -45,6 +49,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
           initialItem: initialItem,
           initialQuantity: initialQuantity,
           initialUnit: initialUnit,
+          voiceReview: voiceReview,
         ),
       ),
     );
@@ -110,22 +115,54 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
       builder: (_) => const _GroceryVoiceCaptureSheet(),
     );
     if (!mounted || transcript == null || transcript.trim().isEmpty) return;
-    final command = await showModalBottomSheet<VoiceCommand>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: VoiceCommandSheet(
-          storeNames: data.stores.map((store) => store.name).toList(),
-          initialTranscript: transcript,
-        ),
-      ),
+    final ruleCommand = VoiceCommand.fromTranscript(
+      transcript,
+      data.stores.map((store) => store.name).toList(),
     );
-    if (!mounted || command == null) return;
+    if (await _openGroceryFromCommand(ruleCommand, data)) return;
+
+    final gemmaStatus = await _gemmaInterpreter.status();
+    if (!mounted) return;
+    if (!gemmaStatus.isReady) {
+      await _showVoiceFailure(
+        transcript,
+        'I could not identify a grocery item and store. Gemma is not installed on this phone.',
+      );
+      return;
+    }
+
+    _showGemmaWorking();
+    try {
+      final response = await _gemmaInterpreter.interpret(
+        transcript: transcript,
+        storeNames: data.stores.map((store) => store.name).toList(),
+      );
+      final command = VoiceCommand.fromGemmaResult(
+        response,
+        data.stores.map((store) => store.name).toList(),
+        transcript: transcript,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      if (await _openGroceryFromCommand(command, data)) return;
+      await _showVoiceFailure(
+        transcript,
+        'I could not identify a grocery item and store from that request.',
+      );
+    } on Exception catch (_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await _showVoiceFailure(
+        transcript,
+        'I could not understand that request on this device.',
+      );
+    }
+  }
+
+  Future<bool> _openGroceryFromCommand(
+    VoiceCommand command,
+    HouseholdData data,
+  ) async {
     switch (command) {
       case AddGroceryVoiceCommand(
         :final storeName,
@@ -134,25 +171,92 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
         :final unit,
       ):
         final store = _storeNamed(data, storeName);
-        if (store != null) {
-          await _openEditor(
-            store,
-            initialItem: item,
-            initialQuantity: quantity,
-            initialUnit: unit,
-          );
-        }
-      case OpenGroceryVoiceCommand(storeName: null):
-        break;
-      case OpenGroceryVoiceCommand(:final storeName):
-        if (storeName != null) {
-          final store = _storeNamed(data, storeName);
-          if (store != null) await _openEditor(store);
-        }
-      default:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Try “Add milk to Village.”')),
+        if (store == null || item.trim().isEmpty) return false;
+        await _openEditor(
+          store,
+          initialItem: item,
+          initialQuantity: quantity,
+          initialUnit: unit,
+          voiceReview: true,
         );
+        return true;
+      case OpenGroceryVoiceCommand(:final storeName):
+        final store = storeName == null ? null : _storeNamed(data, storeName);
+        if (store == null) return false;
+        await _openEditor(store);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void _showGemmaWorking() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Dialog(
+        backgroundColor: Color(0xFFFFF4C8),
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(color: Color(0xFF8F3555)),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Understanding with Gemma on this device…',
+                  style: TextStyle(
+                    color: Color(0xFF42363A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showVoiceFailure(String transcript, String message) async {
+    final action = await showDialog<_GroceryVoiceFailureAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Could not add an item'),
+        content: Text('$message\n\nI heard:\n“$transcript”'),
+        actions: [
+          OutlinedButton(
+            onPressed: () =>
+                Navigator.pop(context, _GroceryVoiceFailureAction.retry),
+            child: const Text('Try again'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _GroceryVoiceFailureAction.chooseStore),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB64E70),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Choose a store'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _GroceryVoiceFailureAction.retry:
+        final data = await widget.repository.load();
+        if (mounted) await _makeVoiceRequest(data);
+      case _GroceryVoiceFailureAction.chooseStore:
+        final data = await widget.repository.load();
+        if (mounted) await _chooseStore(data);
+      case null:
+        break;
     }
   }
 
@@ -289,6 +393,8 @@ class _GroceryStoreCard extends StatelessWidget {
   }
 }
 
+enum _GroceryVoiceFailureAction { retry, chooseStore }
+
 class _VoiceGroceryTip extends StatelessWidget {
   const _VoiceGroceryTip({this.onVoiceRequest});
 
@@ -415,7 +521,10 @@ class _GroceryVoiceCaptureSheet extends StatefulWidget {
 
 class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
   final SpeechToText _speech = SpeechToText();
+  final ScrollController _transcriptScrollController = ScrollController();
   String _transcript = '';
+  String _completedTranscript = '';
+  String _lastFinalSegment = '';
   bool _holding = false;
   bool _starting = false;
   String? _error;
@@ -427,6 +536,8 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
       _starting = true;
       _error = null;
       _transcript = '';
+      _completedTranscript = '';
+      _lastFinalSegment = '';
     });
     final available = await _speech.initialize(
       onError: (error) {
@@ -453,9 +564,39 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
         pauseFor: const Duration(seconds: 8),
       ),
       onResult: (result) {
-        if (mounted) setState(() => _transcript = result.recognizedWords);
+        if (!mounted) return;
+        final segment = result.recognizedWords.trim();
+        if (segment.isEmpty) return;
+        setState(() {
+          if (result.finalResult) {
+            if (segment != _lastFinalSegment) {
+              _completedTranscript = _joinTranscript(
+                _completedTranscript,
+                segment,
+              );
+              _lastFinalSegment = segment;
+            }
+            _transcript = _completedTranscript;
+          } else {
+            _transcript = _joinTranscript(_completedTranscript, segment);
+          }
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_transcriptScrollController.hasClients) return;
+          _transcriptScrollController.animateTo(
+            _transcriptScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+          );
+        });
       },
     );
+  }
+
+  String _joinTranscript(String first, String second) {
+    if (first.isEmpty) return second;
+    if (second.startsWith(first)) return second;
+    return '$first $second';
   }
 
   Future<void> _stopListening() async {
@@ -476,6 +617,7 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
   @override
   void dispose() {
     _speech.stop();
+    _transcriptScrollController.dispose();
     super.dispose();
   }
 
@@ -489,7 +631,7 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Make a voice request',
+              'Add an item by voice',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
@@ -499,6 +641,30 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
                   : 'Press and hold to speak.',
             ),
             const SizedBox(height: 22),
+            Container(
+              height: 88,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE5EA),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: _transcript.isEmpty
+                  ? const Center(child: Text('Your words will appear here.'))
+                  : Scrollbar(
+                      controller: _transcriptScrollController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: _transcriptScrollController,
+                        child: Text(
+                          _transcript,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 18),
             GestureDetector(
               onLongPressStart: (_) => _startListening(),
               onLongPressEnd: (_) => _stopListening(),
@@ -519,14 +685,6 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              _transcript.isEmpty
-                  ? 'Your words will appear here.'
-                  : _transcript,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: Color(0xFF9D4664))),
@@ -546,6 +704,7 @@ class GroceryListEditor extends StatefulWidget {
     this.initialItem = '',
     this.initialQuantity = '',
     this.initialUnit = GroceryQuantityUnit.count,
+    this.voiceReview = false,
   });
 
   final HouseholdRepository repository;
@@ -553,6 +712,7 @@ class GroceryListEditor extends StatefulWidget {
   final String initialItem;
   final String initialQuantity;
   final GroceryQuantityUnit initialUnit;
+  final bool voiceReview;
 
   @override
   State<GroceryListEditor> createState() => _GroceryListEditorState();
@@ -561,6 +721,8 @@ class GroceryListEditor extends StatefulWidget {
 class _GroceryListEditorState extends State<GroceryListEditor> {
   final _itemController = TextEditingController();
   final _quantityController = TextEditingController();
+  final GemmaCommandInterpreter _gemmaInterpreter =
+      const GemmaCommandInterpreter();
   late GroceryQuantityUnit _unit;
   List<GroceryItem> _items = const [];
   bool _loading = true;
@@ -568,10 +730,23 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   @override
   void initState() {
     super.initState();
+    _unit = widget.initialUnit;
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _load();
+    if (!mounted) return;
+    if (widget.voiceReview) {
+      await _reviewVoiceItem(
+        item: widget.initialItem,
+        quantity: widget.initialQuantity,
+        unit: widget.initialUnit,
+      );
+      return;
+    }
     _itemController.text = widget.initialItem;
     _quantityController.text = widget.initialQuantity;
-    _unit = widget.initialUnit;
-    _load();
   }
 
   Future<void> _load() async {
@@ -586,10 +761,24 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   Future<void> _addItem() async {
     final name = _itemController.text.trim();
     if (name.isEmpty) return;
+    await _saveItem(
+      name: name,
+      quantity: _quantityController.text.trim(),
+      unit: _unit,
+    );
+    _itemController.clear();
+    _quantityController.clear();
+  }
+
+  Future<void> _saveItem({
+    required String name,
+    required String quantity,
+    required GroceryQuantityUnit unit,
+  }) async {
     final item = GroceryItem(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: name,
-      quantity: groceryQuantityLabel(_quantityController.text.trim(), _unit),
+      quantity: groceryQuantityLabel(quantity, unit),
     );
     final data = await widget.repository.load();
     final updated = [...data.itemsFor(widget.store.id), item];
@@ -598,8 +787,6 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
         itemsByStore: {...data.itemsByStore, widget.store.id: updated},
       ),
     );
-    _itemController.clear();
-    _quantityController.clear();
     if (mounted) setState(() => _items = updated);
   }
 
@@ -615,6 +802,162 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
       ),
     );
     if (mounted) setState(() => _items = updated);
+  }
+
+  Future<void> _makeVoiceRequest() async {
+    final transcript = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _GroceryVoiceCaptureSheet(),
+    );
+    if (!mounted || transcript == null || transcript.trim().isEmpty) return;
+
+    final contextualTranscript = _contextualTranscript(transcript);
+    final command = VoiceCommand.fromTranscript(contextualTranscript, [
+      widget.store.name,
+    ]);
+    if (await _applyVoiceCommand(command)) return;
+
+    final gemmaStatus = await _gemmaInterpreter.status();
+    if (!mounted) return;
+    if (!gemmaStatus.isReady) {
+      await _showVoiceFailure(
+        transcript,
+        'I could not identify a grocery item. Gemma is not installed on this phone.',
+      );
+      return;
+    }
+
+    _showGemmaWorking();
+    try {
+      final response = await _gemmaInterpreter.interpret(
+        transcript: contextualTranscript,
+        storeNames: [widget.store.name],
+      );
+      final gemmaCommand = VoiceCommand.fromGemmaResult(response, [
+        widget.store.name,
+      ], transcript: contextualTranscript);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      if (await _applyVoiceCommand(gemmaCommand)) return;
+      await _showVoiceFailure(
+        transcript,
+        'I could not identify a grocery item from that request.',
+      );
+    } on Exception catch (_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await _showVoiceFailure(
+        transcript,
+        'I could not understand that request on this device.',
+      );
+    }
+  }
+
+  String _contextualTranscript(String transcript) {
+    final normalized = transcript.trim().replaceFirst(
+      RegExp(r'^please\s+', caseSensitive: false),
+      '',
+    );
+    final storeExpression = RegExp.escape(
+      widget.store.name,
+    ).replaceAll(' ', r'\\s*');
+    if (RegExp(storeExpression, caseSensitive: false).hasMatch(normalized)) {
+      return normalized;
+    }
+    final request = normalized.toLowerCase().startsWith('add ')
+        ? normalized
+        : 'Add $normalized';
+    return '$request to ${widget.store.name}';
+  }
+
+  Future<bool> _applyVoiceCommand(VoiceCommand command) async {
+    if (command is! AddGroceryVoiceCommand || command.item.trim().isEmpty) {
+      return false;
+    }
+    await _reviewVoiceItem(
+      item: command.item,
+      quantity: command.quantity,
+      unit: command.unit,
+    );
+    return true;
+  }
+
+  Future<void> _reviewVoiceItem({
+    required String item,
+    required String quantity,
+    required GroceryQuantityUnit unit,
+  }) async {
+    final draft = await showDialog<_VoiceGroceryDraft>(
+      context: context,
+      builder: (_) =>
+          _VoiceGroceryItemDialog(item: item, quantity: quantity, unit: unit),
+    );
+    if (draft == null || !mounted) return;
+    await _saveItem(
+      name: draft.item,
+      quantity: draft.quantity,
+      unit: draft.unit,
+    );
+  }
+
+  void _showGemmaWorking() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Dialog(
+        backgroundColor: Color(0xFFFFF4C8),
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(color: Color(0xFF8F3555)),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Understanding with Gemma on this device…',
+                  style: TextStyle(
+                    color: Color(0xFF42363A),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showVoiceFailure(String transcript, String message) async {
+    final retry = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Could not add an item'),
+        content: Text('$message\n\nI heard:\n“$transcript”'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB64E70),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Try again'),
+          ),
+        ],
+      ),
+    );
+    if (retry == true && mounted) await _makeVoiceRequest();
   }
 
   void _openWhatsAppPreview() {
@@ -652,14 +995,71 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.store.name),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 56,
+        leadingWidth: 94,
+        leading: TextButton.icon(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.only(left: 8, right: 4),
+            foregroundColor: const Color(0xFF796C70),
+          ),
+          icon: const Icon(Icons.chevron_left),
+          label: const Text('Back'),
+        ),
         actions: [
-          TextButton.icon(
-            onPressed: _loading ? null : _openWhatsAppPreview,
-            icon: const Icon(Icons.send_outlined),
-            label: const Text('Send'),
+          IconButton.filled(
+            tooltip: 'Add item by voice',
+            onPressed: _loading ? null : _makeVoiceRequest,
+            style: IconButton.styleFrom(
+              backgroundColor: const Color(0xFFF2B8C5),
+              foregroundColor: const Color(0xFF703146),
+            ),
+            icon: const Icon(Icons.mic_none_outlined),
+          ),
+          const SizedBox(width: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.icon(
+              onPressed: _loading ? null : _openWhatsAppPreview,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB64E70),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.send_outlined),
+              label: const Text('Send'),
+            ),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Color(0xFFFFF1C9),
+                    child: Icon(
+                      Icons.storefront_outlined,
+                      color: Color(0xFF703146),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.store.name,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -698,6 +1098,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
                           SizedBox(
                             width: 112,
                             child: DropdownButtonFormField<GroceryQuantityUnit>(
+                              key: ValueKey(_unit),
                               initialValue: _unit,
                               decoration: const InputDecoration(
                                 labelText: 'Unit',
@@ -766,6 +1167,149 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _VoiceGroceryDraft {
+  const _VoiceGroceryDraft({
+    required this.item,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String item;
+  final String quantity;
+  final GroceryQuantityUnit unit;
+}
+
+class _VoiceGroceryItemDialog extends StatefulWidget {
+  const _VoiceGroceryItemDialog({
+    required this.item,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String item;
+  final String quantity;
+  final GroceryQuantityUnit unit;
+
+  @override
+  State<_VoiceGroceryItemDialog> createState() =>
+      _VoiceGroceryItemDialogState();
+}
+
+class _VoiceGroceryItemDialogState extends State<_VoiceGroceryItemDialog> {
+  late final TextEditingController _itemController;
+  late final TextEditingController _quantityController;
+  late GroceryQuantityUnit _unit;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemController = TextEditingController(text: widget.item);
+    _quantityController = TextEditingController(text: widget.quantity);
+    _unit = widget.unit;
+  }
+
+  @override
+  void dispose() {
+    _itemController.dispose();
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add this item?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _itemController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Grocery item'),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _quantityController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity (optional)',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<GroceryQuantityUnit>(
+                    key: ValueKey(_unit),
+                    initialValue: _unit,
+                    decoration: const InputDecoration(labelText: 'Unit'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.count,
+                        child: Text('Count'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.dozen,
+                        child: Text('Dozen'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.kilogram,
+                        child: Text('kg'),
+                      ),
+                      DropdownMenuItem(
+                        value: GroceryQuantityUnit.litre,
+                        child: Text('litre'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _unit = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF43383B),
+            side: const BorderSide(color: Color(0xFF43383B)),
+          ),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final item = _itemController.text.trim();
+            if (item.isEmpty) return;
+            Navigator.pop(
+              context,
+              _VoiceGroceryDraft(
+                item: item,
+                quantity: _quantityController.text.trim(),
+                unit: _unit,
+              ),
+            );
+          },
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFB64E70),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

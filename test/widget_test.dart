@@ -68,6 +68,17 @@ void main() {
               'Village',
             ])
             as AddGroceryVoiceCommand;
+    final kilos =
+        VoiceCommand.fromTranscript('add 1 kilo rice to Village', const [
+              'Village',
+            ])
+            as AddGroceryVoiceCommand;
+    final politeKilograms =
+        VoiceCommand.fromTranscript(
+              'please add 2 kilograms rice to Village',
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
     final litres =
         VoiceCommand.fromTranscript('add 1.5 litres milk to Village', const [
               'Village',
@@ -80,6 +91,12 @@ void main() {
     expect(kilograms.item, 'potatoes');
     expect(kilograms.quantity, '2');
     expect(kilograms.unit, GroceryQuantityUnit.kilogram);
+    expect(kilos.item, 'rice');
+    expect(kilos.quantity, '1');
+    expect(kilos.unit, GroceryQuantityUnit.kilogram);
+    expect(politeKilograms.item, 'rice');
+    expect(politeKilograms.quantity, '2');
+    expect(politeKilograms.unit, GroceryQuantityUnit.kilogram);
     expect(litres.item, 'milk');
     expect(litres.quantity, '1.5');
     expect(litres.unit, GroceryQuantityUnit.litre);

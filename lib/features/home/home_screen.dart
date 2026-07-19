@@ -126,6 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (await _tryHandleContactVoice(initialTranscript, data) || !mounted) {
       return;
     }
+    if (await _tryHandleGroceryVoice(initialTranscript, data) || !mounted) {
+      return;
+    }
     final command = await showModalBottomSheet<VoiceCommand>(
       context: context,
       showDragHandle: true,
@@ -164,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
             initialItem: item,
             initialQuantity: quantity,
             initialUnit: unit,
+            voiceReview: true,
           );
         }
       case AddContactVoiceCommand(:final name, :final phoneNumber):
@@ -245,6 +249,106 @@ class _HomeScreenState extends State<HomeScreen> {
     return true;
   }
 
+  Future<bool> _tryHandleGroceryVoice(
+    String transcript,
+    HouseholdData data,
+  ) async {
+    final storeNames = data.stores
+        .map((store) => store.name)
+        .toList(growable: false);
+    final ruleCommand = VoiceCommand.fromTranscript(transcript, storeNames);
+    if (ruleCommand case AddGroceryVoiceCommand(
+      :final storeName,
+      :final item,
+      :final quantity,
+      :final unit,
+    ) when item.trim().isNotEmpty) {
+      final store = _findStore(data, storeName);
+      if (store != null) {
+        await _openGroceryEditor(
+          store,
+          initialItem: item,
+          initialQuantity: quantity,
+          initialUnit: unit,
+          voiceReview: true,
+        );
+        return true;
+      }
+    }
+    if (!_looksLikeGroceryRequest(transcript, data.stores)) return false;
+
+    final gemmaStatus = await _gemmaInterpreter.status();
+    if (!mounted) return true;
+    if (!gemmaStatus.isReady) {
+      await _showGroceryVoiceFailure(
+        transcript,
+        'I could not identify a grocery item and store from that request. Gemma is not installed on this phone.',
+      );
+      return true;
+    }
+
+    _showGemmaWorking();
+    try {
+      final response = await _gemmaInterpreter.interpret(
+        transcript: transcript,
+        storeNames: storeNames,
+      );
+      final command = VoiceCommand.fromGemmaResult(
+        response,
+        storeNames,
+        transcript: transcript,
+      );
+      if (!mounted) return true;
+      Navigator.of(context, rootNavigator: true).pop();
+      if (command case AddGroceryVoiceCommand(
+        :final storeName,
+        :final item,
+        :final quantity,
+        :final unit,
+      ) when item.trim().isNotEmpty) {
+        final store = _findStore(data, storeName);
+        if (store != null) {
+          await _openGroceryEditor(
+            store,
+            initialItem: item,
+            initialQuantity: quantity,
+            initialUnit: unit,
+            voiceReview: true,
+          );
+          return true;
+        }
+      }
+      await _showGroceryVoiceFailure(
+        transcript,
+        'I could not identify a grocery item and store from that request.',
+      );
+    } on Exception catch (_) {
+      if (!mounted) return true;
+      Navigator.of(context, rootNavigator: true).pop();
+      await _showGroceryVoiceFailure(
+        transcript,
+        'I could not understand that request on this device.',
+      );
+    }
+    return true;
+  }
+
+  bool _looksLikeGroceryRequest(String transcript, List<Store> stores) {
+    final normalized = transcript.toLowerCase();
+    final hasGroceryIntent = RegExp(
+      r'\b(add|buy|get|need|put)\b',
+    ).hasMatch(normalized);
+    if (!hasGroceryIntent) return false;
+    return stores.any((store) {
+      final flexibleStoreName = store.name
+          .toLowerCase()
+          .split(RegExp(r'\s+'))
+          .map(RegExp.escape)
+          .join(r'\s*');
+      return RegExp('\\b$flexibleStoreName\\b').hasMatch(normalized);
+    });
+  }
+
   void _showGemmaWorking() {
     showDialog<void>(
       context: context,
@@ -313,6 +417,39 @@ class _HomeScreenState extends State<HomeScreen> {
       case _ContactVoiceFailureAction.retry:
       case null:
         break;
+    }
+  }
+
+  Future<void> _showGroceryVoiceFailure(
+    String transcript,
+    String message,
+  ) async {
+    final action = await showDialog<_GroceryVoiceFailureAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Could not add grocery item'),
+        content: Text('$message\n\nI heard:\n“$transcript”'),
+        actions: [
+          OutlinedButton(
+            onPressed: () =>
+                Navigator.pop(context, _GroceryVoiceFailureAction.retry),
+            child: const Text('Try again'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, _GroceryVoiceFailureAction.openLists),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB64E70),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Open grocery lists'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == _GroceryVoiceFailureAction.openLists) {
+      await _openGroceryLists();
     }
   }
 
@@ -469,6 +606,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String initialItem = '',
     String initialQuantity = '',
     GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
+    bool voiceReview = false,
   }) async {
     await Navigator.push<void>(
       context,
@@ -479,6 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
           initialItem: initialItem,
           initialQuantity: initialQuantity,
           initialUnit: initialUnit,
+          voiceReview: voiceReview,
         ),
       ),
     );
@@ -555,6 +694,8 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 enum _ContactVoiceFailureAction { retry, manual }
+
+enum _GroceryVoiceFailureAction { retry, openLists }
 
 class _Header extends StatelessWidget {
   const _Header({
