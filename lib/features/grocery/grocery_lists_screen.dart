@@ -995,7 +995,18 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.store.name),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 56,
+        leadingWidth: 94,
+        leading: TextButton.icon(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.only(left: 8, right: 4),
+            foregroundColor: const Color(0xFF796C70),
+          ),
+          icon: const Icon(Icons.chevron_left),
+          label: const Text('Back'),
+        ),
         actions: [
           IconButton.filled(
             tooltip: 'Add item by voice',
@@ -1007,12 +1018,32 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
             icon: const Icon(Icons.mic_none_outlined),
           ),
           const SizedBox(width: 4),
-          TextButton.icon(
-            onPressed: _loading ? null : _openWhatsAppPreview,
-            icon: const Icon(Icons.send_outlined),
-            label: const Text('Send'),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton.icon(
+              onPressed: _loading ? null : _openWhatsAppPreview,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB64E70),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.send_outlined),
+              label: const Text('Send'),
+            ),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                widget.store.name,
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+            ),
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
