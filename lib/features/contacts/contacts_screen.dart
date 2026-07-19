@@ -369,7 +369,10 @@ class _ContactVoiceCaptureSheet extends StatefulWidget {
 
 class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
   final SpeechToText _speech = SpeechToText();
+  final ScrollController _transcriptScrollController = ScrollController();
   String _transcript = '';
+  String _completedTranscript = '';
+  String _lastFinalSegment = '';
   bool _holding = false;
   bool _starting = false;
   String? _error;
@@ -381,6 +384,8 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
       _starting = true;
       _error = null;
       _transcript = '';
+      _completedTranscript = '';
+      _lastFinalSegment = '';
     });
     final available = await _speech.initialize(
       onError: (error) {
@@ -407,9 +412,39 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
         pauseFor: const Duration(seconds: 8),
       ),
       onResult: (result) {
-        if (mounted) setState(() => _transcript = result.recognizedWords);
+        if (!mounted) return;
+        final segment = result.recognizedWords.trim();
+        if (segment.isEmpty) return;
+        setState(() {
+          if (result.finalResult) {
+            if (segment != _lastFinalSegment) {
+              _completedTranscript = _joinTranscript(
+                _completedTranscript,
+                segment,
+              );
+              _lastFinalSegment = segment;
+            }
+            _transcript = _completedTranscript;
+          } else {
+            _transcript = _joinTranscript(_completedTranscript, segment);
+          }
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_transcriptScrollController.hasClients) return;
+          _transcriptScrollController.animateTo(
+            _transcriptScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+          );
+        });
       },
     );
+  }
+
+  String _joinTranscript(String first, String second) {
+    if (first.isEmpty) return second;
+    if (second.startsWith(first)) return second;
+    return '$first $second';
   }
 
   Future<void> _stopListening() async {
@@ -430,6 +465,7 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
   @override
   void dispose() {
     _speech.stop();
+    _transcriptScrollController.dispose();
     super.dispose();
   }
 
@@ -452,7 +488,31 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
                   ? 'Listening… release when you are done.'
                   : 'Press and hold to speak.',
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 18),
+            Container(
+              height: 88,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE5EA),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: _transcript.isEmpty
+                  ? const Center(child: Text('Your words will appear here.'))
+                  : Scrollbar(
+                      controller: _transcriptScrollController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: _transcriptScrollController,
+                        child: Text(
+                          _transcript,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 18),
             GestureDetector(
               onLongPressStart: (_) => _startListening(),
               onLongPressEnd: (_) => _stopListening(),
@@ -472,14 +532,6 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
                   color: Colors.white,
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _transcript.isEmpty
-                  ? 'Your words will appear here.'
-                  : _transcript,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
