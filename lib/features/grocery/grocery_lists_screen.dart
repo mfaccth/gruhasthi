@@ -1037,9 +1037,25 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                widget.store.name,
-                style: Theme.of(context).textTheme.headlineMedium,
+              child: Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Color(0xFFFFF1C9),
+                    child: Icon(
+                      Icons.storefront_outlined,
+                      color: Color(0xFF703146),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.store.name,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
