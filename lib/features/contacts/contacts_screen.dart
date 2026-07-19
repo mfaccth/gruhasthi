@@ -248,27 +248,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: Column(
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    foregroundColor: const Color(0xFF796C70),
-                  ),
-                  icon: const Icon(Icons.chevron_left),
-                  label: const Text('Back'),
-                ),
-              ),
-              const SizedBox(height: 26),
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      'Contacts',
-                      style: Theme.of(context).textTheme.headlineMedium,
+                  TextButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.only(right: 8),
+                      foregroundColor: const Color(0xFF796C70),
                     ),
+                    icon: const Icon(Icons.chevron_left),
+                    label: const Text('Back'),
                   ),
+                  const Spacer(),
                   IconButton.filled(
                     tooltip: 'Add contact by voice',
                     onPressed: _makeVoiceRequest,
@@ -287,6 +278,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     ),
                     icon: const Icon(Icons.person_add_alt_1_outlined),
                     label: const Text('Add contact'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Color(0xFFFFF1C9),
+                    child: Icon(
+                      Icons.contacts_outlined,
+                      color: Color(0xFF703146),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Contacts',
+                    style: Theme.of(context).textTheme.headlineMedium,
                   ),
                 ],
               ),
