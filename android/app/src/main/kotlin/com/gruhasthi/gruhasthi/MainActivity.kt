@@ -1,5 +1,9 @@
 package com.gruhasthi.gruhasthi
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.api.net.SearchByTextRequest
@@ -10,8 +14,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        private const val gemmaModelPickerRequestCode = 5104
+    }
+
     private val gemmaExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var gemmaCommandEngine: GemmaCommandEngine? = null
+    private var pendingGemmaModelPick: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -106,6 +115,7 @@ class MainActivity : FlutterActivity() {
                     ?: GemmaCommandEngine(applicationContext).also { gemmaCommandEngine = it }
                 when (call.method) {
                     "status" -> result.success(interpreter.status())
+                    "pickAndInstallModel" -> openGemmaModelPicker(result)
                     "interpretTranscript" -> {
                         val transcript = call.argument<String>("transcript")?.trim().orEmpty()
                         val stores = call.argument<List<String>>("stores") ?: emptyList()
@@ -135,6 +145,70 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun openGemmaModelPicker(result: MethodChannel.Result) {
+        if (pendingGemmaModelPick != null) {
+            result.error("PICKER_BUSY", "A model file is already being selected.", null)
+            return
+        }
+        pendingGemmaModelPick = result
+        val pickerIntent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        startActivityForResult(pickerIntent, gemmaModelPickerRequestCode)
+    }
+
+    @Deprecated("Deprecated in Android API 30")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != gemmaModelPickerRequestCode) return
+
+        val result = pendingGemmaModelPick ?: return
+        pendingGemmaModelPick = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            result.error("MODEL_PICK_CANCELLED", "No Gemma model file was selected.", null)
+            return
+        }
+
+        val sourceName = displayName(uri)
+        if (sourceName != GemmaCommandEngine.modelFileName) {
+            result.error(
+                "INVALID_MODEL_FILE",
+                "Choose the ${GemmaCommandEngine.modelFileName} model file.",
+                null,
+            )
+            return
+        }
+        val interpreter = gemmaCommandEngine
+            ?: GemmaCommandEngine(applicationContext).also { gemmaCommandEngine = it }
+        gemmaExecutor.execute {
+            try {
+                val installed = contentResolver.openInputStream(uri)?.use { input ->
+                    interpreter.installModel(sourceName, input)
+                } ?: throw IllegalStateException("Gruhasthi could not read the selected model file.")
+                runOnUiThread { result.success(installed) }
+            } catch (exception: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "MODEL_INSTALL_FAILED",
+                        exception.message ?: "Gruhasthi could not install the selected Gemma model.",
+                        null,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun displayName(uri: Uri): String? {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (column >= 0 && cursor.moveToFirst()) return cursor.getString(column)
+            }
+        return uri.lastPathSegment?.substringAfterLast('/')
     }
 
     override fun onDestroy() {

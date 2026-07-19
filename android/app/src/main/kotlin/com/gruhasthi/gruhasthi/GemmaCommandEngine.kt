@@ -54,6 +54,34 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         )
     }
 
+    /** Copies the selected LiteRT-LM file into the app-owned model directory. */
+    fun installModel(sourceName: String, source: InputStream): Map<String, Any> {
+        require(sourceName == modelFileName) {
+            "Choose the $modelFileName model file."
+        }
+
+        val target = modelFile()
+        val temporary = File(target.parentFile, "${target.name}.part")
+        temporary.delete()
+        try {
+            temporary.outputStream().use { output -> source.copyTo(output) }
+            require(temporary.length() >= 100L * 1024 * 1024) {
+                "That file is too small to be the Gemma model. Download it again and choose $modelFileName."
+            }
+
+            synchronized(lock) {
+                engine?.close()
+                engine = null
+                loadedModelPath = null
+            }
+            replaceModelFile(temporary, target)
+            return status()
+        } catch (exception: Exception) {
+            temporary.delete()
+            throw exception
+        }
+    }
+
     fun interpret(transcript: String, storeNames: List<String>): Map<String, Any> {
         require(transcript.isNotBlank()) { "Say or type a command first." }
         val model = modelFile()
@@ -130,5 +158,27 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         directory.mkdirs()
         return File(directory, modelFileName)
     }
+
+    private fun replaceModelFile(temporary: File, target: File) {
+        val backup = File(target.parentFile, "${target.name}.previous")
+        backup.delete()
+        val hadExistingModel = target.exists()
+        if (hadExistingModel && !target.renameTo(backup)) {
+            throw IllegalStateException("Gruhasthi could not replace the existing Gemma model.")
+        }
+        if (!temporary.renameTo(target)) {
+            if (hadExistingModel) backup.renameTo(target)
+            throw IllegalStateException("Gruhasthi could not save the selected Gemma model.")
+        }
+        backup.delete()
+    }
+
+    private fun extractJson(value: String): String {
+        val first = value.indexOf('{')
+        val last = value.lastIndexOf('}')
+        if (first < 0 || last <= first) throw IllegalArgumentException("Gemma did not return a command.")
+        return value.substring(first, last + 1)
+    }
+}
 
 class ModelUnavailableException(message: String) : IllegalStateException(message)

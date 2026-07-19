@@ -54,6 +54,21 @@ class GemmaCommandInterpreter {
     }
   }
 
+  /// Opens Android's document picker and imports the approved model file into
+  /// Gruhasthi's private model storage.
+  Future<GemmaModelStatus> pickAndInstallModel() async {
+    final response = await _channel.invokeMapMethod<Object?, Object?>(
+      'pickAndInstallModel',
+    );
+    if (response == null) {
+      throw PlatformException(
+        code: 'EMPTY_RESPONSE',
+        message: 'Gruhasthi could not install the selected Gemma model.',
+      );
+    }
+    return GemmaModelStatus.fromMap(response);
+  }
+
   Future<Map<Object?, Object?>> interpret({
     required String transcript,
     required List<String> storeNames,

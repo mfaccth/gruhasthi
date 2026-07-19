@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
@@ -18,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final GemmaCommandInterpreter _gemmaInterpreter =
       const GemmaCommandInterpreter();
   late Future<GemmaModelStatus> _gemmaStatus;
+  bool _installingGemma = false;
 
   @override
   void initState() {
@@ -52,12 +55,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showGemmaSetup(GemmaModelStatus status) async {
-    final shouldRefresh = await showDialog<bool>(
+    final action = await showDialog<GemmaSetupAction>(
       context: context,
       builder: (_) => GemmaSetupDialog(status: status),
     );
-    if (shouldRefresh == true && mounted) {
-      setState(() => _gemmaStatus = _gemmaInterpreter.status());
+    if (action != GemmaSetupAction.chooseFile || !mounted) return;
+
+    setState(() => _installingGemma = true);
+    try {
+      final installed = await _gemmaInterpreter.pickAndInstallModel();
+      if (!mounted) return;
+      setState(() => _gemmaStatus = Future.value(installed));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gemma is installed and ready to use.')),
+      );
+    } on PlatformException catch (exception) {
+      if (!mounted || exception.code == 'MODEL_PICK_CANCELLED') return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(exception.message ?? 'Gemma could not be installed.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _installingGemma = false);
     }
   }
 
@@ -113,16 +133,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       title: const Text('On-device Gemma (pilot)'),
                       subtitle: Text(
-                        gemma.isReady
+                        _installingGemma
+                            ? 'Installing the selected model. This may take a few minutes.'
+                            : gemma.isReady
                             ? 'Gemma 4 E2B is ready for private command interpretation.'
                             : 'Not installed. Tap to set up the optional pilot model.',
                       ),
                       trailing: Icon(
-                        gemma.isReady
+                        _installingGemma
+                            ? Icons.downloading_outlined
+                            : gemma.isReady
                             ? Icons.check_circle_outline
                             : Icons.info_outline,
                       ),
-                      onTap: () => _showGemmaSetup(gemma),
+                      onTap: _installingGemma
+                          ? null
+                          : () => _showGemmaSetup(gemma),
                     ),
                   );
                 },
@@ -135,10 +161,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+enum GemmaSetupAction { chooseFile }
+
 class GemmaSetupDialog extends StatelessWidget {
   const GemmaSetupDialog({super.key, required this.status});
 
   final GemmaModelStatus status;
+
+  static final _modelPage = Uri.parse(
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -151,20 +183,22 @@ class GemmaSetupDialog extends StatelessWidget {
             children: [
               const TextSpan(
                 text:
-                    'Gemma interprets a voice transcript entirely on this phone. '
-                    'It is optional and does not replace the review step.\n\n'
-                    'Download the LiteRT-LM Gemma 4 E2B model (about 2.6 GB), then copy it to this exact location:\n\n',
+                    'Gemma interprets a voice transcript entirely on this phone. It is optional and does not replace the review step.\n\n',
+              ),
+              const TextSpan(
+                text:
+                    '1. Download the LiteRT-LM Gemma 4 E2B model (about 2.6 GB) from the approved model page.\n2. Return here and choose ',
               ),
               TextSpan(
-                text: status.modelPath.isEmpty
-                    ? 'Open this dialog on an Android device to see the path.'
-                    : status.modelPath,
+                text: status.isReady
+                    ? 'Replace model'
+                    : 'Choose downloaded file',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const TextSpan(
                 text:
-                    '\n\nThe file name must be gemma-4-E2B-it.litertlm. '
-                    'After copying it, return here and choose Check again.',
+                    '. Gruhasthi will validate the file and copy it to the correct private location automatically.\n\n'
+                    'Use Wi-Fi and keep about 4 GB of free device storage. The file must be named gemma-4-E2B-it.litertlm.',
               ),
             ],
           ),
@@ -177,15 +211,22 @@ class GemmaSetupDialog extends StatelessWidget {
             foregroundColor: const Color(0xFF42363A),
             side: const BorderSide(color: Color(0xFF42363A)),
           ),
-          child: const Text('Close'),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () =>
+              launchUrl(_modelPage, mode: LaunchMode.externalApplication),
+          child: const Text('Download model'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: () => Navigator.pop(context, GemmaSetupAction.chooseFile),
           style: FilledButton.styleFrom(
             backgroundColor: const Color(0xFFB64E70),
             foregroundColor: Colors.white,
           ),
-          child: const Text('Check again'),
+          child: Text(
+            status.isReady ? 'Replace model' : 'Choose downloaded file',
+          ),
         ),
       ],
     );
