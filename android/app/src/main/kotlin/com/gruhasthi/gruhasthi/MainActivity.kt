@@ -21,6 +21,7 @@ class MainActivity : FlutterActivity() {
     private val gemmaExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var gemmaCommandEngine: GemmaCommandEngine? = null
     private var pendingGemmaModelPick: MethodChannel.Result? = null
+    private var pendingGemmaModelId: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -115,7 +116,10 @@ class MainActivity : FlutterActivity() {
                     ?: GemmaCommandEngine(applicationContext).also { gemmaCommandEngine = it }
                 when (call.method) {
                     "status" -> result.success(interpreter.status())
-                    "pickAndInstallModel" -> openGemmaModelPicker(result)
+                    "pickAndInstallModel" -> {
+                        val modelId = call.argument<String>("modelId") ?: GemmaCommandEngine.defaultModelId
+                        openGemmaModelPicker(modelId, result)
+                    }
                     "interpretTranscript" -> {
                         val transcript = call.argument<String>("transcript")?.trim().orEmpty()
                         val stores = call.argument<List<String>>("stores") ?: emptyList()
@@ -147,12 +151,17 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun openGemmaModelPicker(result: MethodChannel.Result) {
+    private fun openGemmaModelPicker(modelId: String, result: MethodChannel.Result) {
         if (pendingGemmaModelPick != null) {
             result.error("PICKER_BUSY", "A model file is already being selected.", null)
             return
         }
+        if (GemmaCommandEngine.expectedFileName(modelId) == null) {
+            result.error("UNSUPPORTED_MODEL", "Choose a supported Gemma model.", null)
+            return
+        }
         pendingGemmaModelPick = result
+        pendingGemmaModelId = modelId
         val pickerIntent = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType("*/*")
@@ -167,6 +176,8 @@ class MainActivity : FlutterActivity() {
 
         val result = pendingGemmaModelPick ?: return
         pendingGemmaModelPick = null
+        val modelId = pendingGemmaModelId
+        pendingGemmaModelId = null
         val uri = data?.data
         if (resultCode != Activity.RESULT_OK || uri == null) {
             result.error("MODEL_PICK_CANCELLED", "No Gemma model file was selected.", null)
@@ -174,10 +185,11 @@ class MainActivity : FlutterActivity() {
         }
 
         val sourceName = displayName(uri)
-        if (sourceName != GemmaCommandEngine.modelFileName) {
+        val expectedFileName = modelId?.let { GemmaCommandEngine.expectedFileName(it) }
+        if (expectedFileName == null || sourceName != expectedFileName) {
             result.error(
                 "INVALID_MODEL_FILE",
-                "Choose the ${GemmaCommandEngine.modelFileName} model file.",
+                "Choose the ${expectedFileName ?: "selected"} model file.",
                 null,
             )
             return
@@ -187,7 +199,7 @@ class MainActivity : FlutterActivity() {
         gemmaExecutor.execute {
             try {
                 val installed = contentResolver.openInputStream(uri)?.use { input ->
-                    interpreter.installModel(sourceName, input)
+                    interpreter.installModel(modelId, sourceName, input)
                 } ?: throw IllegalStateException("Gruhasthi could not read the selected model file.")
                 runOnUiThread { result.success(installed) }
             } catch (exception: Exception) {
