@@ -807,15 +807,8 @@ class _VoiceHome extends StatelessWidget {
                       color: const Color(0xFFFFE5EA),
                       borderRadius: BorderRadius.circular(18),
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      liveTranscript.isEmpty
-                          ? 'Listening…'
-                          : liveTranscriptForDisplay(liveTranscript),
-                      maxLines: 3,
-                      overflow: TextOverflow.fade,
-                      softWrap: true,
-                      textAlign: TextAlign.center,
+                    child: _LiveTranscript(
+                      transcript: liveTranscript,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -876,6 +869,62 @@ class _VoiceHome extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _LiveTranscript extends StatefulWidget {
+  const _LiveTranscript({required this.transcript, required this.style});
+
+  final String transcript;
+  final TextStyle? style;
+
+  @override
+  State<_LiveTranscript> createState() => _LiveTranscriptState();
+}
+
+class _LiveTranscriptState extends State<_LiveTranscript> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant _LiveTranscript oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.transcript != oldWidget.transcript) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_controller.hasClients) return;
+        _controller.animateTo(
+          _controller.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.transcript.isEmpty) {
+      return Center(child: Text('Listening…', style: widget.style));
+    }
+    return Scrollbar(
+      controller: _controller,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _controller,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Text(
+          liveTranscriptForDisplay(widget.transcript),
+          softWrap: true,
+          textAlign: TextAlign.center,
+          style: widget.style,
+        ),
+      ),
     );
   }
 }
