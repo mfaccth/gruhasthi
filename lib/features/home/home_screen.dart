@@ -356,6 +356,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 builder: (context, snapshot) => _Header(
                   locality:
                       snapshot.data?.locality ?? 'Kundalahalli, Bengaluru',
+                  onOpenGroceryLists: _openGroceryLists,
+                  onOpenContacts: _openContacts,
+                  onOpenPayments: _openPayments,
+                  onOpenStores: _openStores,
                   onOpenSettings: _openSettings,
                 ),
               ),
@@ -406,9 +410,20 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.locality, required this.onOpenSettings});
+  const _Header({
+    required this.locality,
+    required this.onOpenGroceryLists,
+    required this.onOpenContacts,
+    required this.onOpenPayments,
+    required this.onOpenStores,
+    required this.onOpenSettings,
+  });
 
   final String locality;
+  final VoidCallback onOpenGroceryLists;
+  final VoidCallback onOpenContacts;
+  final VoidCallback onOpenPayments;
+  final VoidCallback onOpenStores;
   final VoidCallback onOpenSettings;
 
   @override
@@ -428,12 +443,94 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        IconButton(
-          tooltip: 'Settings',
-          onPressed: onOpenSettings,
-          icon: const Icon(Icons.settings_outlined, color: Color(0xFFB64E70)),
+        PopupMenuButton<_HomeMenuDestination>(
+          tooltip: 'Menu',
+          icon: const Icon(Icons.menu_rounded, color: Color(0xFFB64E70)),
+          color: const Color(0xFFFFF4C8),
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          offset: const Offset(0, 46),
+          onSelected: (destination) {
+            switch (destination) {
+              case _HomeMenuDestination.groceryLists:
+                onOpenGroceryLists();
+              case _HomeMenuDestination.contacts:
+                onOpenContacts();
+              case _HomeMenuDestination.pay:
+                onOpenPayments();
+              case _HomeMenuDestination.stores:
+                onOpenStores();
+              case _HomeMenuDestination.settings:
+                onOpenSettings();
+            }
+          },
+          itemBuilder: (context) => [
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.groceryLists,
+              icon: Icons.shopping_basket_outlined,
+              label: 'Grocery lists',
+            ),
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.contacts,
+              icon: Icons.contacts_outlined,
+              label: 'Contacts',
+            ),
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.pay,
+              icon: Icons.currency_rupee,
+              label: 'Pay',
+            ),
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.stores,
+              icon: Icons.storefront_outlined,
+              label: 'Stores',
+            ),
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.settings,
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+            ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+enum _HomeMenuDestination { groceryLists, contacts, pay, stores, settings }
+
+class _HomeMenuItem extends PopupMenuItem<_HomeMenuDestination> {
+  _HomeMenuItem({
+    required _HomeMenuDestination destination,
+    required IconData icon,
+    required String label,
+  }) : super(
+         value: destination,
+         height: 52,
+         child: _HomeMenuRow(icon: icon, label: label),
+       );
+}
+
+class _HomeMenuRow extends StatelessWidget {
+  const _HomeMenuRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 190,
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xFF8F3555)),
+          const SizedBox(width: 14),
+          Expanded(child: Text(label)),
+          const Icon(Icons.chevron_right, color: Color(0xFF8F3555)),
+        ],
+      ),
     );
   }
 }
