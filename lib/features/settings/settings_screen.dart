@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -61,25 +63,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (selection == null || !mounted) return;
 
+    await _downloadAndInstallGemma(selection.model);
+  }
+
+  Future<void> _downloadAndInstallGemma(GemmaModel model) async {
     setState(() => _installingGemma = true);
     try {
-      final installed = await _gemmaInterpreter.pickAndInstallModel(
-        selection.model,
-      );
+      await _gemmaInterpreter.startModelDownload(model);
       if (!mounted) return;
+      final installed = await showDialog<GemmaModelStatus>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) =>
+            GemmaDownloadDialog(interpreter: _gemmaInterpreter, model: model),
+      );
+      if (installed == null || !mounted) return;
       setState(() => _gemmaStatus = Future.value(installed));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${installed.model.displayName} is installed and ready.',
-          ),
-        ),
+        SnackBar(content: Text('${installed.model.displayName} is ready.')),
       );
     } on PlatformException catch (exception) {
-      if (!mounted || exception.code == 'MODEL_PICK_CANCELLED') return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(exception.message ?? 'Gemma could not be installed.'),
+          content: Text(exception.message ?? 'Gemma could not be downloaded.'),
         ),
       );
     } finally {
@@ -193,11 +200,30 @@ class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
         : GemmaModel.e2b;
   }
 
+  Future<void> _openModelSource() async {
+    final opened = await launchUrl(
+      Uri.parse(_selectedModel.modelPage),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the model download page.'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isReplacing = widget.status.isReady;
     return AlertDialog(
-      title: const Text('On-device Gemma pilot'),
+      title: const Text(
+        'On-device Gemma pilot',
+        maxLines: 1,
+        softWrap: false,
+        style: TextStyle(fontSize: 22),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -213,13 +239,37 @@ class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
               child: Column(
                 children: [
                   for (final model in GemmaModel.values)
-                    RadioListTile<GemmaModel>(
-                      value: model,
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: const Color(0xFFB64E70),
-                      title: Text(model.displayName),
-                      subtitle: Text(
-                        '${model.description}\n${model.downloadSize} · ${model.storageGuidance}',
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => setState(() => _selectedModel = model),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Radio<GemmaModel>(
+                                  value: model,
+                                  activeColor: const Color(0xFFB64E70),
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  model.displayName,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ],
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: _ModelDetails(model: model),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -227,7 +277,14 @@ class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
             ),
             const SizedBox(height: 6),
             Text(
-              '1. Download the selected model.\n2. Return here and choose the downloaded ${_selectedModel.fileName} file. Gruhasthi validates it and replaces the active model automatically.',
+              'Download & install uses Wi-Fi and continues in Android’s download manager. Gruhasthi verifies the selected model before activating it.',
+            ),
+            const SizedBox(height: 8),
+            _ModelDetails(model: _selectedModel),
+            TextButton.icon(
+              onPressed: _openModelSource,
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('Model source and terms'),
             ),
           ],
         ),
@@ -241,13 +298,6 @@ class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
           ),
           child: const Text('Cancel'),
         ),
-        TextButton(
-          onPressed: () => launchUrl(
-            Uri.parse(_selectedModel.modelPage),
-            mode: LaunchMode.externalApplication,
-          ),
-          child: const Text('Download selected'),
-        ),
         FilledButton(
           onPressed: () =>
               Navigator.pop(context, GemmaSetupSelection(_selectedModel)),
@@ -255,7 +305,185 @@ class _GemmaSetupDialogState extends State<GemmaSetupDialog> {
             backgroundColor: const Color(0xFFB64E70),
             foregroundColor: Colors.white,
           ),
-          child: Text(isReplacing ? 'Replace model' : 'Choose file'),
+          child: Text(
+            isReplacing ? 'Replace with download' : 'Download & install',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModelDetails extends StatelessWidget {
+  const _ModelDetails({required this.model});
+
+  final GemmaModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyMedium;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _DetailBullet(text: model.description, style: style),
+        _DetailBullet(text: model.downloadSize, style: style),
+        _DetailBullet(text: model.storageGuidance, style: style),
+        _DetailBullet(text: model.memoryGuidance, style: style),
+      ],
+    );
+  }
+}
+
+class _DetailBullet extends StatelessWidget {
+  const _DetailBullet({required this.text, this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('•', style: style),
+          const SizedBox(width: 6),
+          Expanded(child: Text(text, style: style)),
+        ],
+      ),
+    );
+  }
+}
+
+class GemmaDownloadDialog extends StatefulWidget {
+  const GemmaDownloadDialog({
+    super.key,
+    required this.interpreter,
+    required this.model,
+  });
+
+  final GemmaCommandInterpreter interpreter;
+  final GemmaModel model;
+
+  @override
+  State<GemmaDownloadDialog> createState() => _GemmaDownloadDialogState();
+}
+
+class _GemmaDownloadDialogState extends State<GemmaDownloadDialog> {
+  Timer? _pollTimer;
+  GemmaDownloadStatus? _status;
+  bool _installing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll();
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) => _poll());
+  }
+
+  Future<void> _poll() async {
+    if (_installing) return;
+    try {
+      final status = await widget.interpreter.modelDownloadStatus();
+      if (!mounted) return;
+      if (status.hasFailed || status.state == 'none') {
+        setState(() {
+          _status = status;
+          _error = status.message.isEmpty
+              ? 'The download did not complete. Check Wi-Fi and try again.'
+              : status.message;
+        });
+        _pollTimer?.cancel();
+        return;
+      }
+      setState(() => _status = status);
+      if (status.isDownloaded) await _installDownloadedModel();
+    } on PlatformException catch (exception) {
+      if (mounted) setState(() => _error = exception.message);
+    }
+  }
+
+  Future<void> _installDownloadedModel() async {
+    if (_installing) return;
+    setState(() => _installing = true);
+    _pollTimer?.cancel();
+    try {
+      final installed = await widget.interpreter.installDownloadedModel(
+        widget.model,
+      );
+      if (mounted) Navigator.pop(context, installed);
+    } on PlatformException catch (exception) {
+      if (mounted) {
+        setState(() {
+          _installing = false;
+          _error =
+              exception.message ??
+              'The downloaded model could not be verified.';
+        });
+      }
+    }
+  }
+
+  Future<void> _cancel() async {
+    if (!_installing) await widget.interpreter.cancelModelDownload();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _status;
+    final progress = status?.progress;
+    final downloadedMb = (status?.bytesDownloaded ?? 0) / (1024 * 1024);
+    final totalMb = (status?.totalBytes ?? 0) / (1024 * 1024);
+    return AlertDialog(
+      title: Text(
+        _installing
+            ? 'Verifying ${widget.model.displayName}'
+            : 'Downloading ${widget.model.displayName}',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _installing
+                ? 'Checking the download and activating the model. This can take a few minutes.'
+                : 'Downloading over Wi-Fi. You can leave Gruhasthi open while this completes.',
+          ),
+          const SizedBox(height: 18),
+          LinearProgressIndicator(
+            value: _installing ? null : progress,
+            color: const Color(0xFFB64E70),
+            backgroundColor: const Color(0xFFFFE1E7),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            totalMb > 0
+                ? '${downloadedMb.toStringAsFixed(0)} MB of ${totalMb.toStringAsFixed(0)} MB'
+                : 'Preparing download…',
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Color(0xFF9D4664))),
+          ],
+        ],
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: _installing ? null : _cancel,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF42363A),
+            side: const BorderSide(color: Color(0xFF42363A)),
+          ),
+          child: Text(_error == null ? 'Cancel download' : 'Close'),
         ),
       ],
     );
