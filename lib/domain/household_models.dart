@@ -89,7 +89,7 @@ class HouseholdData {
     required this.itemsByStore,
     required this.contacts,
     this.userName = '',
-    this.locality = 'Kundalahalli, Bengaluru',
+    this.locality = '',
   });
 
   final List<Store> stores;

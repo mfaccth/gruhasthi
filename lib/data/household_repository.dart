@@ -72,7 +72,7 @@ class HouseholdRepository {
       itemsByStore: itemMap,
       contacts: contacts,
       userName: root['userName'] as String? ?? '',
-      locality: root['locality'] as String? ?? 'Kundalahalli, Bengaluru',
+      locality: root['locality'] as String? ?? '',
     );
   }
 

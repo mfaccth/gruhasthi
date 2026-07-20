@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
+import 'device_locality_detector.dart';
 import '../voice/gemma_command_interpreter.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,6 +24,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const GemmaCommandInterpreter();
   late Future<GemmaModelStatus> _gemmaStatus;
   bool _installingGemma = false;
+  final DeviceLocalityDetector _localityDetector =
+      const DeviceLocalityDetector();
 
   @override
   void initState() {
@@ -43,7 +46,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _editLocality(HouseholdData data) async {
     final locality = await showDialog<String>(
       context: context,
-      builder: (_) => LocalityDialog(initialLocality: data.locality),
+      builder: (_) => LocalityDialog(
+        initialLocality: data.locality,
+        onDetectLocality: _localityDetector.detect,
+      ),
     );
     if (locality == null) return;
     await _saveUpdatedData(data.copyWith(locality: locality));
@@ -128,7 +134,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Icon(Icons.location_on_outlined),
                   ),
                   title: const Text('Locality'),
-                  subtitle: Text(data.locality),
+                  subtitle: Text(
+                    data.locality.isEmpty
+                        ? 'Not set — used for nearby store searches'
+                        : data.locality,
+                  ),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () => _editLocality(data),
                 ),
@@ -564,9 +574,16 @@ class _UserNameDialogState extends State<UserNameDialog> {
 }
 
 class LocalityDialog extends StatefulWidget {
-  const LocalityDialog({super.key, required this.initialLocality});
+  const LocalityDialog({
+    super.key,
+    required this.initialLocality,
+    required this.onDetectLocality,
+    this.isFirstRun = false,
+  });
 
   final String initialLocality;
+  final Future<String> Function() onDetectLocality;
+  final bool isFirstRun;
 
   @override
   State<LocalityDialog> createState() => _LocalityDialogState();
@@ -574,6 +591,8 @@ class LocalityDialog extends StatefulWidget {
 
 class _LocalityDialogState extends State<LocalityDialog> {
   late final TextEditingController _locality;
+  bool _detecting = false;
+  String? _detectionError;
 
   @override
   void initState() {
@@ -587,24 +606,72 @@ class _LocalityDialogState extends State<LocalityDialog> {
     super.dispose();
   }
 
+  Future<void> _useCurrentLocation() async {
+    if (_detecting) return;
+    setState(() {
+      _detecting = true;
+      _detectionError = null;
+    });
+    try {
+      final locality = await widget.onDetectLocality();
+      if (mounted) _locality.text = locality;
+    } on PlatformException catch (exception) {
+      if (mounted) setState(() => _detectionError = exception.message);
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Your locality'),
-      content: TextField(
-        controller: _locality,
-        autofocus: true,
-        textCapitalization: TextCapitalization.words,
-        cursorColor: const Color(0xFFB64E70),
-        cursorWidth: 2.5,
-        decoration: const InputDecoration(
-          labelText: 'Locality and city',
-          helperText: 'Used for nearby store searches.',
-          focusedBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: Color(0xFFB64E70), width: 2),
+      title: Text(widget.isFirstRun ? 'Set your locality' : 'Your locality'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _locality,
+            autofocus: !widget.isFirstRun,
+            textCapitalization: TextCapitalization.words,
+            cursorColor: const Color(0xFFB64E70),
+            cursorWidth: 2.5,
+            decoration: const InputDecoration(
+              labelText: 'Your neighbourhood or locality',
+              hintText: 'e.g. Battery Park, New York City',
+              helperText: 'Include your city and country for better results.',
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFFB64E70), width: 2),
+              ),
+              floatingLabelStyle: TextStyle(color: Color(0xFFB64E70)),
+            ),
           ),
-          floatingLabelStyle: TextStyle(color: Color(0xFFB64E70)),
-        ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _detecting ? null : _useCurrentLocation,
+            icon: _detecting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.my_location_outlined),
+            label: Text(
+              _detecting ? 'Finding your locality…' : 'Use current location',
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555)),
+            ),
+          ),
+          if (_detectionError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _detectionError!,
+              style: const TextStyle(color: Color(0xFF9C2D55)),
+            ),
+          ],
+        ],
       ),
       actions: [
         OutlinedButton(
@@ -613,7 +680,7 @@ class _LocalityDialogState extends State<LocalityDialog> {
             foregroundColor: const Color(0xFF42363A),
             side: const BorderSide(color: Color(0xFF42363A)),
           ),
-          child: const Text('Cancel'),
+          child: Text(widget.isFirstRun ? 'Not now' : 'Cancel'),
         ),
         FilledButton(
           onPressed: () {
