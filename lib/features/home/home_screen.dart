@@ -6,6 +6,7 @@ import '../../data/secure_payment_repository.dart';
 import '../../domain/household_models.dart';
 import '../contacts/contacts_screen.dart';
 import '../grocery/grocery_lists_screen.dart';
+import '../help/app_help.dart';
 import '../payments/payment_recipients_screen.dart';
 import '../settings/settings_screen.dart';
 import '../stores/stores_screen.dart';
@@ -36,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _speechListening = false;
   bool _restartingHoldToTalk = false;
   bool _askedForName = false;
+  bool _askedForTour = false;
   String _heldTranscript = '';
   String _completedTranscript = '';
   String _lastFinalSegment = '';
@@ -44,7 +46,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _data = widget.repository.load();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _askForName());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _askForName();
+      await _maybeShowAppTour();
+    });
   }
 
   @override
@@ -118,6 +123,31 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (mounted) setState(() => _data = widget.repository.load());
+  }
+
+  Future<void> _maybeShowAppTour() async {
+    if (_askedForTour) return;
+    _askedForTour = true;
+    if (await widget.repository.hasSeenAppTour() || !mounted) return;
+    await _showAppTour();
+  }
+
+  Future<void> _showAppTour() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => const AppTourScreen()),
+    );
+    await widget.repository.markAppTourSeen();
+  }
+
+  Future<void> _openHelp() async {
+    final startTour = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => const AppHelpSheet(),
+    );
+    if (startTour == true && mounted) await _showAppTour();
   }
 
   Future<void> _openVoice({String initialTranscript = ''}) async {
@@ -645,6 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onOpenPayments: _openPayments,
                   onOpenStores: _openStores,
                   onOpenSettings: _openSettings,
+                  onOpenHelp: _openHelp,
                 ),
               ),
               const SizedBox(height: 20),
@@ -705,6 +736,7 @@ class _Header extends StatelessWidget {
     required this.onOpenPayments,
     required this.onOpenStores,
     required this.onOpenSettings,
+    required this.onOpenHelp,
   });
 
   final String locality;
@@ -713,6 +745,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onOpenPayments;
   final VoidCallback onOpenStores;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -731,6 +764,14 @@ class _Header extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Help',
+          onPressed: onOpenHelp,
+          icon: const Icon(
+            Icons.help_outline_rounded,
+            color: Color(0xFFB64E70),
           ),
         ),
         PopupMenuButton<_HomeMenuDestination>(
@@ -754,6 +795,8 @@ class _Header extends StatelessWidget {
                 onOpenStores();
               case _HomeMenuDestination.settings:
                 onOpenSettings();
+              case _HomeMenuDestination.help:
+                onOpenHelp();
             }
           },
           itemBuilder: (context) => [
@@ -781,6 +824,11 @@ class _Header extends StatelessWidget {
               destination: _HomeMenuDestination.settings,
               icon: Icons.settings_outlined,
               label: 'Settings',
+            ),
+            _HomeMenuItem(
+              destination: _HomeMenuDestination.help,
+              icon: Icons.help_outline_rounded,
+              label: 'Help & app tour',
             ),
           ],
         ),
@@ -830,7 +878,14 @@ class _GruhasthiBrand extends StatelessWidget {
   }
 }
 
-enum _HomeMenuDestination { groceryLists, contacts, pay, stores, settings }
+enum _HomeMenuDestination {
+  groceryLists,
+  contacts,
+  pay,
+  stores,
+  settings,
+  help,
+}
 
 class _HomeMenuItem extends PopupMenuItem<_HomeMenuDestination> {
   _HomeMenuItem({
