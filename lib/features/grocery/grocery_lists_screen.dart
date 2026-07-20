@@ -93,15 +93,6 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     await _refresh();
   }
 
-  Future<void> _openWhatsAppPreview(Store store, List<GroceryItem> items) {
-    return Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WhatsAppPreviewScreen(store: store, items: items),
-      ),
-    );
-  }
-
   Store? _storeNamed(HouseholdData data, String name) {
     for (final store in data.stores) {
       if (store.name.toLowerCase() == name.toLowerCase()) return store;
@@ -342,13 +333,6 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             final data = snapshot.data!;
-            final readyStore = data.stores.cast<Store?>().firstWhere(
-              (store) =>
-                  store != null &&
-                  data.itemsFor(store.id).isNotEmpty &&
-                  hasUsableWhatsAppNumber(store.whatsAppNumber),
-              orElse: () => null,
-            );
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 22),
               children: [
@@ -371,32 +355,17 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
                         style: Theme.of(context).textTheme.headlineMedium,
                       ),
                     ),
-                    TextButton(
+                    TextButton.icon(
                       onPressed: _openManageStores,
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF8F3555),
                       ),
-                      child: const Text('Manage'),
+                      icon: const Icon(Icons.storefront_outlined, size: 18),
+                      label: const Text('Manage stores'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 22),
-                OutlinedButton.icon(
-                  onPressed: () => _chooseStore(data),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(72),
-                    alignment: Alignment.centerLeft,
-                    backgroundColor: const Color(0xFFFFF4C8),
-                    foregroundColor: const Color(0xFF703146),
-                    side: const BorderSide(
-                      color: Color(0xFFC99525),
-                      width: 1.5,
-                    ),
-                  ),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Create a list for a store'),
-                ),
-                const SizedBox(height: 14),
                 for (final store in data.stores) ...[
                   _GroceryStoreCard(
                     store: store,
@@ -407,18 +376,6 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
                 ],
                 const SizedBox(height: 16),
                 _VoiceGroceryTip(onVoiceRequest: () => _makeVoiceRequest(data)),
-                if (readyStore != null) ...[
-                  const SizedBox(height: 24),
-                  _ReadyToSendCard(
-                    store: readyStore,
-                    items: data.itemsFor(readyStore.id),
-                    onEdit: () => _openEditor(readyStore),
-                    onSend: () => _openWhatsAppPreview(
-                      readyStore,
-                      data.itemsFor(readyStore.id),
-                    ),
-                  ),
-                ],
               ],
             );
           },
@@ -444,8 +401,10 @@ class _GroceryStoreCard extends StatelessWidget {
     final ready =
         items.isNotEmpty && hasUsableWhatsAppNumber(store.whatsAppNumber);
     final status = items.isEmpty
-        ? 'No items · Draft'
-        : '${items.length} items · ${ready ? 'Ready to send' : 'Draft'}';
+        ? 'No items yet'
+        : ready
+        ? '${items.length} items · Ready to send'
+        : '${items.length} items · Add a WhatsApp number to send';
     return Card(
       margin: EdgeInsets.zero,
       child: ListTile(
@@ -500,79 +459,6 @@ class _VoiceGroceryTip extends StatelessWidget {
               ),
               icon: const Icon(Icons.mic_none_outlined),
               label: const Text('Make a voice request'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReadyToSendCard extends StatelessWidget {
-  const _ReadyToSendCard({
-    required this.store,
-    required this.items,
-    required this.onEdit,
-    required this.onSend,
-  });
-
-  final Store store;
-  final List<GroceryItem> items;
-  final VoidCallback onEdit;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    final itemNames = items.map((item) => item.name).join(' · ');
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Ready to send?',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEA),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Text('To: ${store.name} · WhatsApp\n$itemNames'),
-            ),
-            const SizedBox(height: 22),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onEdit,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF8F3555),
-                      side: const BorderSide(
-                        color: Color(0xFF9D4664),
-                        width: 1.4,
-                      ),
-                    ),
-                    child: const Text('Edit list'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: onSend,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFB64E70),
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Send on WhatsApp'),
-                  ),
-                ),
-              ],
             ),
           ],
         ),

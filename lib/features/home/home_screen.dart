@@ -850,88 +850,86 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _GruhasthiBrand(),
-              const SizedBox(height: 2),
-              Text(
-                locality,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF796C70),
-                ),
+        Row(
+          children: [
+            const Expanded(child: _GruhasthiBrand()),
+            IconButton(
+              tooltip: 'Help',
+              onPressed: onOpenHelp,
+              icon: const Icon(
+                Icons.help_outline_rounded,
+                color: Color(0xFFB64E70),
               ),
-            ],
-          ),
-        ),
-        IconButton(
-          tooltip: 'Help',
-          onPressed: onOpenHelp,
-          icon: const Icon(
-            Icons.help_outline_rounded,
-            color: Color(0xFFB64E70),
-          ),
-        ),
-        PopupMenuButton<_HomeMenuDestination>(
-          tooltip: 'Menu',
-          icon: const Icon(Icons.menu_rounded, color: Color(0xFFB64E70)),
-          color: const Color(0xFFFFF4C8),
-          elevation: 8,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          offset: const Offset(0, 46),
-          onSelected: (destination) {
-            switch (destination) {
-              case _HomeMenuDestination.groceryLists:
-                onOpenGroceryLists();
-              case _HomeMenuDestination.contacts:
-                onOpenContacts();
-              case _HomeMenuDestination.pay:
-                onOpenPayments();
-              case _HomeMenuDestination.stores:
-                onOpenStores();
-              case _HomeMenuDestination.settings:
-                onOpenSettings();
-              case _HomeMenuDestination.help:
-                onOpenHelp();
-            }
-          },
-          itemBuilder: (context) => [
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.groceryLists,
-              icon: Icons.shopping_basket_outlined,
-              label: 'Grocery lists',
             ),
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.contacts,
-              icon: Icons.contacts_outlined,
-              label: 'Contacts',
-            ),
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.pay,
-              icon: Icons.currency_rupee,
-              label: 'Pay',
-            ),
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.stores,
-              icon: Icons.storefront_outlined,
-              label: 'Stores',
-            ),
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.settings,
-              icon: Icons.settings_outlined,
-              label: 'Settings',
-            ),
-            _HomeMenuItem(
-              destination: _HomeMenuDestination.help,
-              icon: Icons.help_outline_rounded,
-              label: 'Help & app tour',
+            PopupMenuButton<_HomeMenuDestination>(
+              tooltip: 'Menu',
+              icon: const Icon(Icons.menu_rounded, color: Color(0xFFB64E70)),
+              color: const Color(0xFFFFF4C8),
+              elevation: 8,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              offset: const Offset(0, 46),
+              onSelected: (destination) {
+                switch (destination) {
+                  case _HomeMenuDestination.groceryLists:
+                    onOpenGroceryLists();
+                  case _HomeMenuDestination.contacts:
+                    onOpenContacts();
+                  case _HomeMenuDestination.pay:
+                    onOpenPayments();
+                  case _HomeMenuDestination.stores:
+                    onOpenStores();
+                  case _HomeMenuDestination.settings:
+                    onOpenSettings();
+                  case _HomeMenuDestination.help:
+                    onOpenHelp();
+                }
+              },
+              itemBuilder: (context) => [
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.groceryLists,
+                  icon: Icons.shopping_basket_outlined,
+                  label: 'Grocery lists',
+                ),
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.contacts,
+                  icon: Icons.contacts_outlined,
+                  label: 'Contacts',
+                ),
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.pay,
+                  icon: Icons.currency_rupee,
+                  label: 'Pay',
+                ),
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.stores,
+                  icon: Icons.storefront_outlined,
+                  label: 'Stores',
+                ),
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.settings,
+                  icon: Icons.settings_outlined,
+                  label: 'Settings',
+                ),
+                _HomeMenuItem(
+                  destination: _HomeMenuDestination.help,
+                  icon: Icons.help_outline_rounded,
+                  label: 'Help & app tour',
+                ),
+              ],
             ),
           ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          locality,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF796C70)),
         ),
       ],
     );
@@ -1124,17 +1122,7 @@ class _VoiceHome extends StatelessWidget {
               ),
               Positioned(
                 bottom: 0,
-                left: centre - 76,
-                child: _RadialAction(
-                  label: 'Contacts',
-                  icon: Icons.contacts_outlined,
-                  backgroundColor: const Color(0xFFE5F3EE),
-                  onPressed: onOpenContacts,
-                ),
-              ),
-              Positioned(
-                bottom: 0,
-                left: centre + 8,
+                left: 0,
                 child: _RadialAction(
                   label: 'Stores',
                   icon: Icons.storefront_outlined,
@@ -1144,12 +1132,22 @@ class _VoiceHome extends StatelessWidget {
               ),
               Positioned(
                 bottom: 0,
-                left: 0,
+                left: centre - 76,
                 child: _RadialAction(
                   label: 'Grocery lists',
                   icon: Icons.shopping_basket_outlined,
                   backgroundColor: const Color(0xFFFFF1C9),
                   onPressed: onOpenGroceryLists,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: centre + 8,
+                child: _RadialAction(
+                  label: 'Contacts',
+                  icon: Icons.contacts_outlined,
+                  backgroundColor: const Color(0xFFE5F3EE),
+                  onPressed: onOpenContacts,
                 ),
               ),
               Positioned(
