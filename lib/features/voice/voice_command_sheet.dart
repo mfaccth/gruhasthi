@@ -210,9 +210,15 @@ class GroceryDetails {
 }
 
 GroceryDetails groceryDetails(String value) {
-  final normalized = value.trim();
+  final normalized = _normalizeAndHalfQuantity(value.trim()).replaceFirst(
+    RegExp(
+      r'^(?:and\s+)?(?:(?:a\s+)?half(?:\s+a)?|1\s*/\s*2)\b',
+      caseSensitive: false,
+    ),
+    '0.5',
+  );
   final match = RegExp(
-    r'^(?:(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(dozens|dozen|kilograms|kilogram|kilos|kilo|kgs|kg|litres|litre|liters|liter|counts|count|pieces|piece|packets|packet|l)?\s*(?:of\s+)?)?(.+)$',
+    r'^(?:(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(dozens|dozen|kilo\s*grams?|kilograms|kilogram|kilos|kilo|kgs|kg|litres|litre|liters|liter|counts|count|pieces|piece|packets|packet|l)?\s*(?:of\s+)?)?(.+)$',
     caseSensitive: false,
   ).firstMatch(normalized);
   if (match == null) {
@@ -231,6 +237,18 @@ GroceryDetails groceryDetails(String value) {
   );
 }
 
+String _normalizeAndHalfQuantity(String value) {
+  final match = RegExp(
+    r'^(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s+and\s+(?:a\s+)?half\b',
+    caseSensitive: false,
+  ).firstMatch(value);
+  if (match == null) return value;
+  final whole = groceryQuantity(match.group(1) ?? '');
+  if (whole.isEmpty) return value;
+  final quantity = double.parse(whole) + 0.5;
+  return value.replaceRange(0, match.end, quantity.toString());
+}
+
 String groceryQuantity(String value) {
   const spokenNumbers = {
     'one': '1',
@@ -243,6 +261,7 @@ String groceryQuantity(String value) {
     'eight': '8',
     'nine': '9',
     'ten': '10',
+    'half': '0.5',
   };
   final normalized = value.trim().toLowerCase();
   return spokenNumbers[normalized] ??
@@ -250,7 +269,7 @@ String groceryQuantity(String value) {
 }
 
 GroceryQuantityUnit groceryUnitFromValue(String value) {
-  final normalized = value.trim().toLowerCase();
+  final normalized = value.trim().toLowerCase().replaceAll(' ', '');
   if (const {'dozen', 'dozens'}.contains(normalized)) {
     return GroceryQuantityUnit.dozen;
   }

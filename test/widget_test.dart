@@ -79,6 +79,35 @@ void main() {
               const ['Village'],
             )
             as AddGroceryVoiceCommand;
+    final halfLitre =
+        VoiceCommand.fromTranscript('add half litre milk to Village', const [
+              'Village',
+            ])
+            as AddGroceryVoiceCommand;
+    final halfKiloGram =
+        VoiceCommand.fromTranscript(
+              'add half kilo gram potatoes to Village',
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
+    final spokenHalfKilo =
+        VoiceCommand.fromTranscript(
+              'add and 1/2 kilo tur dal to Village',
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
+    final oneAndHalfKilo =
+        VoiceCommand.fromTranscript(
+              'add one and half kg chana dal to Village',
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
+    final twoAndHalfKilo =
+        VoiceCommand.fromTranscript(
+              'add two and a half kg wheat to Village',
+              const ['Village'],
+            )
+            as AddGroceryVoiceCommand;
     final litres =
         VoiceCommand.fromTranscript('add 1.5 litres milk to Village', const [
               'Village',
@@ -97,6 +126,21 @@ void main() {
     expect(politeKilograms.item, 'rice');
     expect(politeKilograms.quantity, '2');
     expect(politeKilograms.unit, GroceryQuantityUnit.kilogram);
+    expect(halfLitre.item, 'milk');
+    expect(halfLitre.quantity, '0.5');
+    expect(halfLitre.unit, GroceryQuantityUnit.litre);
+    expect(halfKiloGram.item, 'potatoes');
+    expect(halfKiloGram.quantity, '0.5');
+    expect(halfKiloGram.unit, GroceryQuantityUnit.kilogram);
+    expect(spokenHalfKilo.item, 'tur dal');
+    expect(spokenHalfKilo.quantity, '0.5');
+    expect(spokenHalfKilo.unit, GroceryQuantityUnit.kilogram);
+    expect(oneAndHalfKilo.item, 'chana dal');
+    expect(oneAndHalfKilo.quantity, '1.5');
+    expect(oneAndHalfKilo.unit, GroceryQuantityUnit.kilogram);
+    expect(twoAndHalfKilo.item, 'wheat');
+    expect(twoAndHalfKilo.quantity, '2.5');
+    expect(twoAndHalfKilo.unit, GroceryQuantityUnit.kilogram);
     expect(litres.item, 'milk');
     expect(litres.quantity, '1.5');
     expect(litres.unit, GroceryQuantityUnit.litre);
