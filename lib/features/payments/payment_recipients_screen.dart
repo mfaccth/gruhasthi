@@ -66,7 +66,7 @@ class _PaymentRecipientsScreenState extends State<PaymentRecipientsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(left: 16),
                   child: Text(
-                    'Choose payment recipient',
+                    'Choose Recipient',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                 ),
