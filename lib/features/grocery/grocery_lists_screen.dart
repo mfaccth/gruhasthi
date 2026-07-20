@@ -3,11 +3,13 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
+import '../help/app_help.dart';
+import '../settings/settings_screen.dart';
+import '../stores/stores_screen.dart';
 import '../whatsapp/whatsapp_message.dart';
 import '../whatsapp/whatsapp_preview_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
-import '../stores/stores_screen.dart';
 
 class GroceryListsScreen extends StatefulWidget {
   const GroceryListsScreen({super.key, required this.repository});
@@ -126,7 +128,8 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     if (!gemmaStatus.isReady) {
       await _showVoiceFailure(
         transcript,
-        'I could not identify a grocery item and store. Gemma is not installed on this phone.',
+        'I could not identify a grocery item and store.',
+        showGemmaSetup: true,
       );
       return;
     }
@@ -223,23 +226,67 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     );
   }
 
-  Future<void> _showVoiceFailure(String transcript, String message) async {
+  Future<void> _showVoiceFailure(
+    String transcript,
+    String message, {
+    bool showGemmaSetup = false,
+  }) async {
     final action = await showDialog<_GroceryVoiceFailureAction>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Could not add an item'),
-        content: Text('$message\n\nI heard:\n“$transcript”'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (showGemmaSetup) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'For more flexible wording, you can set up the optional private on-device assistant, Gemma. It runs on this phone and you still review before saving.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text('I heard:\n“$transcript”'),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _GroceryVoiceFailureAction.help),
+              icon: const Icon(Icons.record_voice_over_outlined),
+              label: const Text('Grocery voice help'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _GroceryVoiceFailureAction.settings),
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Set up assistant in Settings'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+          ],
+        ),
         actions: [
           OutlinedButton(
             onPressed: () =>
                 Navigator.pop(context, _GroceryVoiceFailureAction.retry),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFF4C8),
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555), width: 1.5),
+            ),
             child: const Text('Try again'),
           ),
           FilledButton(
             onPressed: () =>
                 Navigator.pop(context, _GroceryVoiceFailureAction.chooseStore),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB64E70),
+              backgroundColor: const Color(0xFF9C2D55),
               foregroundColor: Colors.white,
             ),
             child: const Text('Choose a store'),
@@ -255,9 +302,32 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
       case _GroceryVoiceFailureAction.chooseStore:
         final data = await widget.repository.load();
         if (mounted) await _chooseStore(data);
+      case _GroceryVoiceFailureAction.help:
+        await _openGroceryVoiceHelp();
+      case _GroceryVoiceFailureAction.settings:
+        await _openSettings();
       case null:
         break;
     }
+  }
+
+  Future<void> _openGroceryVoiceHelp() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => const AppHelpSheet(
+      initialVoiceCategory: VoiceHelpCategory.groceryLists,
+    ),
+  );
+
+  Future<void> _openSettings() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(repository: widget.repository),
+      ),
+    );
+    if (mounted) await _refresh();
   }
 
   @override
@@ -393,7 +463,7 @@ class _GroceryStoreCard extends StatelessWidget {
   }
 }
 
-enum _GroceryVoiceFailureAction { retry, chooseStore }
+enum _GroceryVoiceFailureAction { retry, chooseStore, help, settings }
 
 class _VoiceGroceryTip extends StatelessWidget {
   const _VoiceGroceryTip({this.onVoiceRequest});
@@ -527,6 +597,8 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
   String _lastFinalSegment = '';
   bool _holding = false;
   bool _starting = false;
+  bool _speechListening = false;
+  bool _restarting = false;
   String? _error;
 
   Future<void> _startListening() async {
@@ -540,6 +612,7 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
       _lastFinalSegment = '';
     });
     final available = await _speech.initialize(
+      onStatus: _onSpeechStatus,
       onError: (error) {
         if (mounted) setState(() => _error = error.errorMsg);
       },
@@ -555,6 +628,32 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
       return;
     }
     setState(() => _starting = false);
+    await _listenWhileHeld();
+  }
+
+  void _onSpeechStatus(String status) {
+    final listening = status == 'listening';
+    if (mounted) setState(() => _speechListening = listening);
+    // Android can finish one recognition session during a natural pause even
+    // while the user is still holding the microphone. Start another session
+    // so that the remainder of the same request is captured too.
+    if (!listening && _holding && !_starting) {
+      _restartWhileHeld();
+    }
+  }
+
+  void _restartWhileHeld() {
+    if (_restarting) return;
+    _restarting = true;
+    Future<void>.delayed(const Duration(milliseconds: 150), () async {
+      _restarting = false;
+      await _listenWhileHeld();
+    });
+  }
+
+  Future<void> _listenWhileHeld() async {
+    if (!_holding || _speechListening) return;
+    if (mounted) setState(() => _speechListening = true);
     await _speech.listen(
       listenOptions: SpeechListenOptions(
         localeId: 'en_IN',
@@ -568,17 +667,17 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
         final segment = result.recognizedWords.trim();
         if (segment.isEmpty) return;
         setState(() {
+          // Never replace what has already been heard. A final result after a
+          // pause often contains only the latest phrase on Android.
+          _transcript = _mergeTranscript(_transcript, segment);
           if (result.finalResult) {
             if (segment != _lastFinalSegment) {
-              _completedTranscript = _joinTranscript(
+              _completedTranscript = _mergeTranscript(
                 _completedTranscript,
                 segment,
               );
               _lastFinalSegment = segment;
             }
-            _transcript = _completedTranscript;
-          } else {
-            _transcript = _joinTranscript(_completedTranscript, segment);
           }
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -593,17 +692,56 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
     );
   }
 
-  String _joinTranscript(String first, String second) {
-    if (first.isEmpty) return second;
-    if (second.startsWith(first)) return second;
-    return '$first $second';
+  /// Android can return a final result for only the phrase after a pause.
+  /// Merge it with the visible partial transcript instead of replacing it.
+  String _mergeTranscript(String first, String second) {
+    final existing = first.trim();
+    final incoming = second.trim();
+    if (existing.isEmpty) return incoming;
+    if (incoming.isEmpty ||
+        existing == incoming ||
+        existing.endsWith(incoming)) {
+      return existing;
+    }
+    if (incoming.startsWith(existing) || incoming.contains(existing)) {
+      return incoming;
+    }
+
+    final existingWords = existing.split(RegExp(r'\s+'));
+    final incomingWords = incoming.split(RegExp(r'\s+'));
+    final maxOverlap = existingWords.length < incomingWords.length
+        ? existingWords.length
+        : incomingWords.length;
+    for (var overlap = maxOverlap; overlap > 0; overlap--) {
+      final existingSuffix = existingWords.sublist(
+        existingWords.length - overlap,
+      );
+      final incomingPrefix = incomingWords.sublist(0, overlap);
+      if (_sameWords(existingSuffix, incomingPrefix)) {
+        return [...existingWords, ...incomingWords.sublist(overlap)].join(' ');
+      }
+    }
+    return '$existing $incoming';
+  }
+
+  bool _sameWords(List<String> first, List<String> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].toLowerCase() != second[index].toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> _stopListening() async {
     if (!_holding && !_starting) return;
-    setState(() => _holding = false);
+    setState(() {
+      _holding = false;
+      _speechListening = false;
+    });
     await _speech.stop();
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     if (_transcript.trim().isEmpty) {
       setState(
@@ -824,7 +962,8 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     if (!gemmaStatus.isReady) {
       await _showVoiceFailure(
         transcript,
-        'I could not identify a grocery item. Gemma is not installed on this phone.',
+        'I could not identify a grocery item.',
+        showGemmaSetup: true,
       );
       return;
     }
@@ -935,21 +1074,69 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     );
   }
 
-  Future<void> _showVoiceFailure(String transcript, String message) async {
-    final retry = await showDialog<bool>(
+  Future<void> _showVoiceFailure(
+    String transcript,
+    String message, {
+    bool showGemmaSetup = false,
+  }) async {
+    final action = await showDialog<_StoreGroceryVoiceFailureAction>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Could not add an item'),
-        content: Text('$message\n\nI heard:\n“$transcript”'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (showGemmaSetup) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'For more flexible wording, you can set up the optional private on-device assistant, Gemma. It runs on this phone and you still review before saving.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text('I heard:\n“$transcript”'),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _StoreGroceryVoiceFailureAction.help),
+              icon: const Icon(Icons.record_voice_over_outlined),
+              label: const Text('Grocery voice help'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(
+                context,
+                _StoreGroceryVoiceFailureAction.settings,
+              ),
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Set up assistant in Settings'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+          ],
+        ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
+          OutlinedButton(
+            onPressed: () =>
+                Navigator.pop(context, _StoreGroceryVoiceFailureAction.cancel),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFF4C8),
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555), width: 1.5),
+            ),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () =>
+                Navigator.pop(context, _StoreGroceryVoiceFailureAction.retry),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB64E70),
+              backgroundColor: const Color(0xFF9C2D55),
               foregroundColor: Colors.white,
             ),
             child: const Text('Try again'),
@@ -957,7 +1144,30 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
         ],
       ),
     );
-    if (retry == true && mounted) await _makeVoiceRequest();
+    if (!mounted) return;
+    switch (action) {
+      case _StoreGroceryVoiceFailureAction.retry:
+        await _makeVoiceRequest();
+      case _StoreGroceryVoiceFailureAction.help:
+        await showModalBottomSheet<void>(
+          context: context,
+          showDragHandle: true,
+          isScrollControlled: true,
+          builder: (_) => const AppHelpSheet(
+            initialVoiceCategory: VoiceHelpCategory.groceryLists,
+          ),
+        );
+      case _StoreGroceryVoiceFailureAction.settings:
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SettingsScreen(repository: widget.repository),
+          ),
+        );
+      case _StoreGroceryVoiceFailureAction.cancel:
+      case null:
+        break;
+    }
   }
 
   void _openWhatsAppPreview() {
@@ -1182,6 +1392,8 @@ class _VoiceGroceryDraft {
   final String quantity;
   final GroceryQuantityUnit unit;
 }
+
+enum _StoreGroceryVoiceFailureAction { retry, help, settings, cancel }
 
 class _VoiceGroceryItemDialog extends StatefulWidget {
   const _VoiceGroceryItemDialog({

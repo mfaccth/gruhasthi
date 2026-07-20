@@ -162,12 +162,12 @@ class _HomeScreenState extends State<HomeScreen> {
     await widget.repository.markAppTourSeen();
   }
 
-  Future<void> _openHelp() async {
+  Future<void> _openHelp({VoiceHelpCategory? initialVoiceCategory}) async {
     final startTour = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (_) => const AppHelpSheet(),
+      builder: (_) => AppHelpSheet(initialVoiceCategory: initialVoiceCategory),
     );
     if (startTour == true && mounted) await _showAppTour();
   }
@@ -259,7 +259,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!gemmaStatus.isReady) {
       await _showContactVoiceFailure(
         transcript,
-        'I could not identify a contact from that request. Gemma is not installed on this phone.',
+        'I could not identify a contact from that request.',
+        showGemmaSetup: true,
       );
       return true;
     }
@@ -437,24 +438,65 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showContactVoiceFailure(
     String transcript,
-    String message,
-  ) async {
+    String message, {
+    bool showGemmaSetup = false,
+  }) async {
     final action = await showDialog<_ContactVoiceFailureAction>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Could not add contact'),
-        content: Text('$message\n\nI heard:\n“$transcript”'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (showGemmaSetup) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'For more flexible wording, you can set up the optional private on-device assistant, Gemma. It runs on this phone and you still review before saving.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text('I heard:\n“$transcript”'),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _ContactVoiceFailureAction.help),
+              icon: const Icon(Icons.record_voice_over_outlined),
+              label: const Text('Contact voice help'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _ContactVoiceFailureAction.settings),
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Set up assistant in Settings'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+          ],
+        ),
         actions: [
           OutlinedButton(
             onPressed: () =>
                 Navigator.pop(context, _ContactVoiceFailureAction.retry),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFF4C8),
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555), width: 1.5),
+            ),
             child: const Text('Try again'),
           ),
           FilledButton(
             onPressed: () =>
                 Navigator.pop(context, _ContactVoiceFailureAction.manual),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB64E70),
+              backgroundColor: const Color(0xFF9C2D55),
               foregroundColor: Colors.white,
             ),
             child: const Text('Add manually'),
@@ -467,6 +509,11 @@ class _HomeScreenState extends State<HomeScreen> {
       case _ContactVoiceFailureAction.manual:
         await _openContactsForVoice('', '');
       case _ContactVoiceFailureAction.retry:
+        break;
+      case _ContactVoiceFailureAction.help:
+        await _openHelp(initialVoiceCategory: VoiceHelpCategory.contacts);
+      case _ContactVoiceFailureAction.settings:
+        await _openSettings();
       case null:
         break;
     }
@@ -562,15 +609,12 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           if (result.finalResult) {
             if (segment != _lastFinalSegment) {
-              _completedTranscript = _joinTranscript(
-                _completedTranscript,
-                segment,
-              );
+              _completedTranscript = _mergeTranscript(_heldTranscript, segment);
               _lastFinalSegment = segment;
             }
             _heldTranscript = _completedTranscript;
           } else {
-            _heldTranscript = _joinTranscript(_completedTranscript, segment);
+            _heldTranscript = _mergeTranscript(_completedTranscript, segment);
           }
         });
       },
@@ -584,10 +628,44 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _joinTranscript(String first, String second) {
-    if (first.isEmpty) return second;
-    if (second.startsWith(first)) return second;
-    return '$first $second';
+  String _mergeTranscript(String first, String second) {
+    final existing = first.trim();
+    final incoming = second.trim();
+    if (existing.isEmpty) return incoming;
+    if (incoming.isEmpty ||
+        existing == incoming ||
+        existing.endsWith(incoming)) {
+      return existing;
+    }
+    if (incoming.startsWith(existing) || incoming.contains(existing)) {
+      return incoming;
+    }
+
+    final existingWords = existing.split(RegExp(r'\s+'));
+    final incomingWords = incoming.split(RegExp(r'\s+'));
+    final maxOverlap = existingWords.length < incomingWords.length
+        ? existingWords.length
+        : incomingWords.length;
+    for (var overlap = maxOverlap; overlap > 0; overlap--) {
+      final existingSuffix = existingWords.sublist(
+        existingWords.length - overlap,
+      );
+      final incomingPrefix = incomingWords.sublist(0, overlap);
+      if (_sameTranscriptWords(existingSuffix, incomingPrefix)) {
+        return [...existingWords, ...incomingWords.sublist(overlap)].join(' ');
+      }
+    }
+    return '$existing $incoming';
+  }
+
+  bool _sameTranscriptWords(List<String> first, List<String> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].toLowerCase() != second[index].toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> _stopHoldToTalk() async {
@@ -597,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _speechListening = false;
     });
     await _holdToTalkSpeech.stop();
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     final transcript = _heldTranscript.trim();
     if (transcript.isEmpty) {
@@ -747,7 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-enum _ContactVoiceFailureAction { retry, manual }
+enum _ContactVoiceFailureAction { retry, manual, help, settings }
 
 enum _GroceryVoiceFailureAction { retry, openLists }
 

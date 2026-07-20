@@ -3,6 +3,8 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
+import '../help/app_help.dart';
+import '../settings/settings_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
 
@@ -131,7 +133,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
     if (!gemmaStatus.isReady) {
       await _showVoiceFailure(
         transcript,
-        'I could not identify a contact from that request. Gemma is not installed on this phone.',
+        'I could not identify a contact from that request.',
+        showGemmaSetup: true,
       );
       return;
     }
@@ -206,12 +209,50 @@ class _ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  Future<void> _showVoiceFailure(String transcript, String message) async {
+  Future<void> _showVoiceFailure(
+    String transcript,
+    String message, {
+    bool showGemmaSetup = false,
+  }) async {
     final action = await showDialog<_VoiceFailureAction>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Could not add contact'),
-        content: Text('$message\n\nI heard:\n“$transcript”'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (showGemmaSetup) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'For more flexible wording, you can set up the optional private on-device assistant, Gemma. It runs on this phone and you still review before saving.',
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text('I heard:\n“$transcript”'),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, _VoiceFailureAction.help),
+              icon: const Icon(Icons.record_voice_over_outlined),
+              label: const Text('Contact voice help'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Navigator.pop(context, _VoiceFailureAction.settings),
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: const Text('Set up assistant in Settings'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8F3555),
+                side: const BorderSide(color: Color(0xFF8F3555)),
+              ),
+            ),
+          ],
+        ),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(context, _VoiceFailureAction.retry),
@@ -239,10 +280,29 @@ class _ContactsScreenState extends State<ContactsScreen> {
         await _makeVoiceRequest();
       case _VoiceFailureAction.manual:
         await _edit(null);
+      case _VoiceFailureAction.help:
+        await _openContactVoiceHelp();
+      case _VoiceFailureAction.settings:
+        await _openSettings();
       case null:
         break;
     }
   }
+
+  Future<void> _openContactVoiceHelp() => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) =>
+        const AppHelpSheet(initialVoiceCategory: VoiceHelpCategory.contacts),
+  );
+
+  Future<void> _openSettings() => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => SettingsScreen(repository: widget.repository),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -371,7 +431,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 }
 
-enum _VoiceFailureAction { retry, manual }
+enum _VoiceFailureAction { retry, manual, help, settings }
 
 class _ContactVoiceCaptureSheet extends StatefulWidget {
   const _ContactVoiceCaptureSheet();

@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 
+enum VoiceHelpCategory { contacts, groceryLists, stores, navigation }
+
 class AppHelpSheet extends StatelessWidget {
-  const AppHelpSheet({super.key});
+  const AppHelpSheet({super.key, this.initialVoiceCategory});
+
+  final VoiceHelpCategory? initialVoiceCategory;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-        child: Column(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -30,11 +38,54 @@ class AppHelpSheet extends StatelessWidget {
               label: const Text('Take the app tour'),
             ),
             const SizedBox(height: 16),
-            const _HelpExample(
-              icon: Icons.mic_none_outlined,
-              title: 'Voice examples',
-              detail:
-                  '“Add 1 kilo rice to Village”\n“Add contact Aarti, phone number 9876543210”\n“Show me contacts”',
+            Text(
+              'Voice commands',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            const Text('Press and hold the microphone, then try a phrase below.'),
+            const SizedBox(height: 10),
+            _VoiceCommandCategory(
+              category: VoiceHelpCategory.contacts,
+              selected: initialVoiceCategory == VoiceHelpCategory.contacts,
+              icon: Icons.contacts_outlined,
+              title: 'Contacts',
+              phrases: const [
+                '“Add contact Vasu, phone number 9845051410.”',
+                '“Show me contacts.”',
+              ],
+            ),
+            _VoiceCommandCategory(
+              category: VoiceHelpCategory.groceryLists,
+              selected:
+                  initialVoiceCategory == VoiceHelpCategory.groceryLists,
+              icon: Icons.shopping_basket_outlined,
+              title: 'Grocery lists',
+              phrases: const [
+                '“Add 1 kg rice to Village.”',
+                '“Add half litre milk to Big Basket.”',
+                '“Open Village list.”',
+              ],
+            ),
+            _VoiceCommandCategory(
+              category: VoiceHelpCategory.stores,
+              selected: initialVoiceCategory == VoiceHelpCategory.stores,
+              icon: Icons.storefront_outlined,
+              title: 'Stores',
+              phrases: const [
+                '“Add store Star Bazaar.”',
+                '“Show me stores.”',
+              ],
+            ),
+            _VoiceCommandCategory(
+              category: VoiceHelpCategory.navigation,
+              selected: initialVoiceCategory == VoiceHelpCategory.navigation,
+              icon: Icons.navigation_outlined,
+              title: 'Navigation',
+              phrases: const [
+                '“Go to contacts list.”',
+                '“Show grocery lists.”',
+              ],
             ),
             const _HelpExample(
               icon: Icons.shopping_basket_outlined,
@@ -53,6 +104,65 @@ class AppHelpSheet extends StatelessWidget {
               title: 'On-device Gemma',
               detail:
                   'If the built-in voice parser is unsure, Gemma can understand requests privately on your phone.',
+            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceCommandCategory extends StatelessWidget {
+  const _VoiceCommandCategory({
+    required this.category,
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.phrases,
+  });
+
+  final VoiceHelpCategory category;
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final List<String> phrases;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = selected
+        ? const Color(0xFFB64E70)
+        : const Color(0xFFE8D7DA);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: selected ? const Color(0xFFFFE4EA) : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: borderColor, width: selected ? 1.5 : 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              backgroundColor: const Color(0xFFFFF1C9),
+              child: Icon(icon, color: const Color(0xFF703146)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  for (final phrase in phrases)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text('• $phrase'),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
