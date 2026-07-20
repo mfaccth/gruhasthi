@@ -12,6 +12,7 @@ import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
+import java.security.MessageDigest
 
 /**
  * A narrow, local-only Gemma adapter for the proof of concept.
@@ -28,15 +29,25 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
                 id = "e2b",
                 displayName = "Gemma 4 E2B",
                 fileName = "gemma-4-E2B-it.litertlm",
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true",
+                expectedBytes = 2588147712L,
+                sha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+                requiredFreeBytes = 6L * 1024 * 1024 * 1024,
             ),
             "e4b" to GemmaModelSpec(
                 id = "e4b",
                 displayName = "Gemma 4 E4B",
                 fileName = "gemma-4-E4B-it.litertlm",
+                downloadUrl = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true",
+                expectedBytes = 3659530240L,
+                sha256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+                requiredFreeBytes = 10L * 1024 * 1024 * 1024,
             ),
         )
 
         fun expectedFileName(modelId: String): String? = modelSpecs[modelId]?.fileName
+
+        fun modelSpec(modelId: String): GemmaModelSpec? = modelSpecs[modelId]
 
         private const val systemInstruction = """
             You interpret spoken commands for a local household app.
@@ -104,6 +115,21 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         } catch (exception: Exception) {
             temporary.delete()
             throw exception
+        }
+    }
+
+    fun installDownloadedModel(modelId: String, downloadedFile: File): Map<String, Any> {
+        val selectedSpec = modelSpecs[modelId]
+            ?: throw IllegalArgumentException("Choose a supported Gemma model.")
+        require(downloadedFile.isFile) { "The Gemma download could not be found. Download it again." }
+        require(downloadedFile.length() == selectedSpec.expectedBytes) {
+            "The Gemma download is incomplete. Download it again."
+        }
+        require(sha256(downloadedFile).equals(selectedSpec.sha256, ignoreCase = true)) {
+            "The downloaded Gemma file could not be verified. Download it again."
+        }
+        return downloadedFile.inputStream().use { input ->
+            installModel(modelId, selectedSpec.fileName, input)
         }
     }
 
@@ -208,6 +234,19 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         backup.delete()
     }
 
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
+    }
+
     private fun extractJson(value: String): String {
         val first = value.indexOf('{')
         val last = value.lastIndexOf('}')
@@ -216,10 +255,14 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
     }
 }
 
-private data class GemmaModelSpec(
+data class GemmaModelSpec(
     val id: String,
     val displayName: String,
     val fileName: String,
+    val downloadUrl: String,
+    val expectedBytes: Long,
+    val sha256: String,
+    val requiredFreeBytes: Long,
 )
 
 class ModelUnavailableException(message: String) : IllegalStateException(message)

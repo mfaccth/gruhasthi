@@ -32,16 +32,18 @@ page](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm).
 On an Android phone, open **Settings → On-device Gemma (pilot)** and choose a
 model:
 
-- **Gemma 4 E2B (recommended):** smaller and faster for most phones. Download
-  `gemma-4-E2B-it.litertlm`; leave about 6 GB of free storage while installing.
-- **Gemma 4 E4B (higher capability, pilot):** a 3.66 GB model for capable
-  phones. Download `gemma-4-E4B-it.litertlm`; leave about 10 GB of free storage
-  when replacing a model.
+- **Gemma 4 E2B (recommended):** 2.59 GB download; leave about 6 GB of free
+  storage while installing. A phone with 6 GB RAM or more is recommended.
+- **Gemma 4 E4B (higher capability, pilot):** 3.66 GB download (3.41 GiB);
+  leave about 10 GB of free storage while replacing a model. A phone with 8 GB
+  RAM or more is recommended; 12 GB is best for smoother use.
 
-Use **Download selected**, then return to Gruhasthi and choose the downloaded
-file through Android's document picker. Gruhasthi verifies the exact filename,
-copies it into its private model location, and replaces any previously active
-model. The user does not need to access `Android/data` or run ADB commands.
+Use **Download & install** to download the selected model over Wi-Fi directly
+from the configured LiteRT Community source. Gruhasthi shows progress, checks
+the expected file size and SHA-256 hash, then activates the model
+automatically. **Choose file** remains available if the user already has the
+matching model file. The user does not need to access `Android/data` or run
+ADB commands.
 
 In a voice review sheet, select **Interpret with
 on-device Gemma (pilot)**. The model returns only a constrained local command;

@@ -1,8 +1,12 @@
 package com.gruhasthi.gruhasthi
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import android.os.StatFs
 import android.provider.OpenableColumns
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.Place
@@ -12,10 +16,14 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     companion object {
         private const val gemmaModelPickerRequestCode = 5104
+        private const val gemmaDownloadIdKey = "model_download_id"
+        private const val gemmaDownloadModelIdKey = "model_download_id_model"
+        private const val gemmaDownloadPathKey = "model_download_path"
     }
 
     private val gemmaExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -120,6 +128,19 @@ class MainActivity : FlutterActivity() {
                         val modelId = call.argument<String>("modelId") ?: GemmaCommandEngine.defaultModelId
                         openGemmaModelPicker(modelId, result)
                     }
+                    "startModelDownload" -> {
+                        val modelId = call.argument<String>("modelId") ?: GemmaCommandEngine.defaultModelId
+                        startGemmaModelDownload(modelId, result)
+                    }
+                    "modelDownloadStatus" -> result.success(gemmaDownloadStatus())
+                    "installDownloadedModel" -> {
+                        val modelId = call.argument<String>("modelId") ?: GemmaCommandEngine.defaultModelId
+                        installDownloadedGemmaModel(modelId, result)
+                    }
+                    "cancelModelDownload" -> {
+                        cancelGemmaModelDownload()
+                        result.success(null)
+                    }
                     "interpretTranscript" -> {
                         val transcript = call.argument<String>("transcript")?.trim().orEmpty()
                         val stores = call.argument<List<String>>("stores") ?: emptyList()
@@ -150,6 +171,135 @@ class MainActivity : FlutterActivity() {
                 }
             }
     }
+
+    private fun startGemmaModelDownload(modelId: String, result: MethodChannel.Result) {
+        val spec = GemmaCommandEngine.modelSpec(modelId)
+        if (spec == null) {
+            result.error("UNSUPPORTED_MODEL", "Choose a supported Gemma model.", null)
+            return
+        }
+        val existing = gemmaDownloadStatus()
+        if (existing["modelId"] == modelId && existing["state"] in setOf("pending", "downloading")) {
+            result.success(existing)
+            return
+        }
+        cancelGemmaModelDownload()
+
+        val downloadDirectory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(filesDir, "downloads")
+        downloadDirectory.mkdirs()
+        val availableBytes = StatFs(downloadDirectory.absolutePath).availableBytes
+        if (availableBytes < spec.requiredFreeBytes) {
+            result.error(
+                "INSUFFICIENT_STORAGE",
+                "Free up enough storage before downloading ${spec.displayName}.",
+                mapOf("requiredBytes" to spec.requiredFreeBytes, "availableBytes" to availableBytes),
+            )
+            return
+        }
+        val target = File(downloadDirectory, "${spec.fileName}.download")
+        target.delete()
+        val request = DownloadManager.Request(Uri.parse(spec.downloadUrl))
+            .setTitle("Downloading ${spec.displayName}")
+            .setDescription("Gruhasthi will verify and install it automatically.")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setAllowedOverMetered(false)
+            .setDestinationInExternalFilesDir(
+                this,
+                Environment.DIRECTORY_DOWNLOADS,
+                target.name,
+            )
+        val downloadId = downloadManager().enqueue(request)
+        downloadPreferences().edit()
+            .putLong(gemmaDownloadIdKey, downloadId)
+            .putString(gemmaDownloadModelIdKey, modelId)
+            .putString(gemmaDownloadPathKey, target.absolutePath)
+            .apply()
+        result.success(gemmaDownloadStatus())
+    }
+
+    private fun installDownloadedGemmaModel(modelId: String, result: MethodChannel.Result) {
+        val status = gemmaDownloadStatus()
+        if (status["state"] != "downloaded" || status["modelId"] != modelId) {
+            result.error("DOWNLOAD_NOT_READY", "The selected model has not finished downloading.", status)
+            return
+        }
+        val path = downloadPreferences().getString(gemmaDownloadPathKey, null)
+        if (path == null) {
+            result.error("DOWNLOAD_NOT_FOUND", "The downloaded model could not be found.", null)
+            return
+        }
+        val interpreter = gemmaCommandEngine
+            ?: GemmaCommandEngine(applicationContext).also { gemmaCommandEngine = it }
+        gemmaExecutor.execute {
+            try {
+                val installed = interpreter.installDownloadedModel(modelId, File(path))
+                File(path).delete()
+                clearGemmaDownload()
+                runOnUiThread { result.success(installed) }
+            } catch (exception: Exception) {
+                runOnUiThread {
+                    result.error(
+                        "MODEL_INSTALL_FAILED",
+                        exception.message ?: "Gruhasthi could not install the downloaded Gemma model.",
+                        null,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun gemmaDownloadStatus(): Map<String, Any> {
+        val preferences = downloadPreferences()
+        val downloadId = preferences.getLong(gemmaDownloadIdKey, -1L)
+        val modelId = preferences.getString(gemmaDownloadModelIdKey, null)
+        if (downloadId < 0L || modelId == null) return mapOf("state" to "none")
+        val cursor = downloadManager().query(DownloadManager.Query().setFilterById(downloadId))
+        cursor.use {
+            if (!it.moveToFirst()) {
+                clearGemmaDownload()
+                return mapOf("state" to "none")
+            }
+            val status = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            val bytes = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+            val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+            val state = when (status) {
+                DownloadManager.STATUS_PENDING, DownloadManager.STATUS_PAUSED -> "pending"
+                DownloadManager.STATUS_RUNNING -> "downloading"
+                DownloadManager.STATUS_SUCCESSFUL -> "downloaded"
+                else -> "failed"
+            }
+            val response = mutableMapOf<String, Any>(
+                "state" to state,
+                "modelId" to modelId,
+                "bytesDownloaded" to bytes,
+                "totalBytes" to total,
+            )
+            if (status == DownloadManager.STATUS_FAILED) {
+                response["message"] = "The model download failed. Check Wi-Fi and try again."
+            }
+            return response
+        }
+    }
+
+    private fun cancelGemmaModelDownload() {
+        val downloadId = downloadPreferences().getLong(gemmaDownloadIdKey, -1L)
+        if (downloadId >= 0L) downloadManager().remove(downloadId)
+        downloadPreferences().getString(gemmaDownloadPathKey, null)?.let { File(it).delete() }
+        clearGemmaDownload()
+    }
+
+    private fun clearGemmaDownload() {
+        downloadPreferences().edit()
+            .remove(gemmaDownloadIdKey)
+            .remove(gemmaDownloadModelIdKey)
+            .remove(gemmaDownloadPathKey)
+            .apply()
+    }
+
+    private fun downloadManager() = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+    private fun downloadPreferences() = getSharedPreferences("gemma_download", Context.MODE_PRIVATE)
 
     private fun openGemmaModelPicker(modelId: String, result: MethodChannel.Result) {
         if (pendingGemmaModelPick != null) {
