@@ -1057,7 +1057,9 @@ class _VoiceHome extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final centre = constraints.maxWidth / 2;
-        final microphoneTop = (constraints.maxHeight - 120) / 2;
+        // Keep the microphone below centre so the upper portion of the home
+        // screen has room to show a longer live transcript while speaking.
+        final microphoneTop = (constraints.maxHeight - 120) / 2 + 56;
         return SizedBox(
           height: constraints.maxHeight,
           child: Stack(
@@ -1093,7 +1095,7 @@ class _VoiceHome extends StatelessWidget {
                   right: 0,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
-                    height: 72,
+                    height: 128,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 6,
@@ -1361,7 +1363,7 @@ class _VoiceTarget extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Try “Add milk to Village list”',
+          'Try “Add half liter milk to village list”',
           textAlign: TextAlign.center,
           style: Theme.of(
             context,
