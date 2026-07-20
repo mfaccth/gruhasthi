@@ -29,7 +29,13 @@ class HouseholdRepository {
     : _storage = storage ?? SharedPreferencesStore();
 
   static const _storageKey = 'household_data_v1';
+  static const _appTourSeenKey = 'app_tour_seen_v1';
   final KeyValueStore _storage;
+
+  Future<bool> hasSeenAppTour() async =>
+      (await _storage.read(_appTourSeenKey)) == 'true';
+
+  Future<void> markAppTourSeen() => _storage.write(_appTourSeenKey, 'true');
 
   Future<HouseholdData> load() async {
     final stored = await _storage.read(_storageKey);
