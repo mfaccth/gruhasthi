@@ -70,8 +70,11 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
             for (final store in data.stores)
               ListTile(
                 leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFFFF1C9),
-                  child: Icon(Icons.storefront_outlined),
+                  backgroundColor: Color(0xFFFDE4E8),
+                  child: Icon(
+                    Icons.storefront_outlined,
+                    color: Color(0xFF703146),
+                  ),
                 ),
                 title: Text(store.name),
                 onTap: () => Navigator.pop(context, store),
@@ -411,8 +414,8 @@ class _GroceryStoreCard extends StatelessWidget {
         minVerticalPadding: 18,
         onTap: onTap,
         leading: const CircleAvatar(
-          backgroundColor: Color(0xFFFFF1C9),
-          child: Icon(Icons.storefront_outlined),
+          backgroundColor: Color(0xFFFDE4E8),
+          child: Icon(Icons.storefront_outlined, color: Color(0xFF703146)),
         ),
         title: Text(store.name),
         subtitle: Text(status),
@@ -1137,7 +1140,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
                 children: [
                   const CircleAvatar(
                     radius: 20,
-                    backgroundColor: Color(0xFFFFF1C9),
+                    backgroundColor: Color(0xFFFDE4E8),
                     child: Icon(
                       Icons.storefront_outlined,
                       color: Color(0xFF703146),
