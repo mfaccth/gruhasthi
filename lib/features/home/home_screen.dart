@@ -9,6 +9,7 @@ import '../grocery/grocery_lists_screen.dart';
 import '../help/app_help.dart';
 import '../payments/payment_recipients_screen.dart';
 import '../settings/settings_screen.dart';
+import '../settings/device_locality_detector.dart';
 import '../stores/stores_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _restartingHoldToTalk = false;
   bool _askedForName = false;
   bool _askedForTour = false;
+  bool _askedForLocality = false;
   String _heldTranscript = '';
   String _completedTranscript = '';
   String _lastFinalSegment = '';
@@ -48,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _data = widget.repository.load();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _askForName();
+      await _askForLocality();
       await _maybeShowAppTour();
     });
   }
@@ -112,6 +115,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (name == null || !mounted) return;
     await widget.repository.save(data.copyWith(userName: name));
+    if (mounted) setState(() => _data = widget.repository.load());
+  }
+
+  Future<void> _askForLocality() async {
+    if (_askedForLocality) return;
+    _askedForLocality = true;
+    final data = await widget.repository.load();
+    if (!mounted || data.locality.trim().isNotEmpty) return;
+    final locality = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => LocalityDialog(
+        initialLocality: '',
+        onDetectLocality: const DeviceLocalityDetector().detect,
+        isFirstRun: true,
+      ),
+    );
+    if (locality == null || !mounted) return;
+    await widget.repository.save(data.copyWith(locality: locality));
     if (mounted) setState(() => _data = widget.repository.load());
   }
 
@@ -668,8 +690,9 @@ class _HomeScreenState extends State<HomeScreen> {
               FutureBuilder<HouseholdData>(
                 future: _data,
                 builder: (context, snapshot) => _Header(
-                  locality:
-                      snapshot.data?.locality ?? 'Kundalahalli, Bengaluru',
+                  locality: snapshot.data?.locality.isNotEmpty == true
+                      ? snapshot.data!.locality
+                      : 'Set your locality in Settings',
                   onOpenGroceryLists: _openGroceryLists,
                   onOpenContacts: _openContacts,
                   onOpenPayments: _openPayments,

@@ -1,6 +1,6 @@
 # Gruhasthi
 
-Voice-first household automation for a single user in Kundalahalli, Bengaluru.
+Voice-first household automation for a single user, with local store discovery anywhere in the world.
 
 ## Google Maps store discovery
 

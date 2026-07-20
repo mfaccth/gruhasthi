@@ -1,13 +1,23 @@
 package com.gruhasthi.gruhasthi
 
+import android.Manifest
 import android.app.Activity
 import android.app.DownloadManager
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.StatFs
 import android.provider.OpenableColumns
+import androidx.core.app.ActivityCompat
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.Place
 import com.google.android.libraries.places.api.net.SearchByTextRequest
@@ -17,6 +27,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.io.File
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -24,12 +35,19 @@ class MainActivity : FlutterActivity() {
         private const val gemmaDownloadIdKey = "model_download_id"
         private const val gemmaDownloadModelIdKey = "model_download_id_model"
         private const val gemmaDownloadPathKey = "model_download_path"
+        private const val localityPermissionRequestCode = 5105
     }
 
     private val gemmaExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val localityExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val localityHandler = Handler(Looper.getMainLooper())
     private var gemmaCommandEngine: GemmaCommandEngine? = null
     private var pendingGemmaModelPick: MethodChannel.Result? = null
     private var pendingGemmaModelId: String? = null
+    private var pendingLocalityResult: MethodChannel.Result? = null
+    private var localityLocationManager: LocationManager? = null
+    private var localityListener: LocationListener? = null
+    private var localityTimeout: Runnable? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -56,6 +74,15 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.gruhasthi.gruhasthi/locality")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "detectLocality") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                detectLocality(result)
+            }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.gruhasthi.gruhasthi/store_search")
             .setMethodCallHandler { call, result ->
                 if (call.method != "searchNearbyStores") {
@@ -78,9 +105,15 @@ class MainActivity : FlutterActivity() {
                     result.error("INVALID_QUERY", "Enter what you want to find.", null)
                     return@setMethodCallHandler
                 }
-                val locality = call.argument<String>("locality")?.trim()
-                    .takeUnless { it.isNullOrBlank() }
-                    ?: "Kundalahalli, Bengaluru"
+                val locality = call.argument<String>("locality")?.trim().orEmpty()
+                if (locality.isBlank()) {
+                    result.error(
+                        "LOCALITY_REQUIRED",
+                        "Set your neighbourhood or locality in Settings before searching for stores.",
+                        null,
+                    )
+                    return@setMethodCallHandler
+                }
 
                 try {
                     if (!Places.isInitialized()) {
@@ -246,6 +279,170 @@ class MainActivity : FlutterActivity() {
                     )
                 }
             }
+        }
+    }
+
+    private fun detectLocality(result: MethodChannel.Result) {
+        if (pendingLocalityResult != null) {
+            result.error("LOCATION_BUSY", "A locality lookup is already in progress.", null)
+            return
+        }
+        pendingLocalityResult = result
+        if (!hasLocationPermission()) {
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+                localityPermissionRequestCode,
+            )
+            return
+        }
+        beginLocalityLookup()
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun beginLocalityLookup() {
+        val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val provider = listOf(
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.GPS_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER,
+        ).firstOrNull { provider ->
+            try {
+                manager.isProviderEnabled(provider)
+            } catch (_: Exception) {
+                false
+            }
+        }
+        if (provider == null) {
+            finishLocalityError("LOCATION_DISABLED", "Turn on device location, then try again.")
+            return
+        }
+
+        localityLocationManager = manager
+        val lastKnown = listOf(
+            LocationManager.NETWORK_PROVIDER,
+            LocationManager.GPS_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER,
+        ).mapNotNull { candidate ->
+            try {
+                manager.getLastKnownLocation(candidate)
+            } catch (_: SecurityException) {
+                null
+            }
+        }.maxByOrNull { location -> location.time }
+
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                clearLocalityLocationRequest()
+                reverseGeocodeLocality(location)
+            }
+        }
+        localityListener = listener
+        try {
+            manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+            localityTimeout = Runnable {
+                clearLocalityLocationRequest()
+                if (lastKnown != null) {
+                    reverseGeocodeLocality(lastKnown)
+                } else {
+                    finishLocalityError(
+                        "LOCATION_UNAVAILABLE",
+                        "Your current locality could not be determined. You can enter it manually instead.",
+                    )
+                }
+            }.also { timeout -> localityHandler.postDelayed(timeout, 12_000) }
+        } catch (_: SecurityException) {
+            finishLocalityError("LOCATION_DENIED", "Location access was not granted.")
+        }
+    }
+
+    private fun clearLocalityLocationRequest() {
+        localityTimeout?.let { timeout -> localityHandler.removeCallbacks(timeout) }
+        localityTimeout = null
+        val manager = localityLocationManager
+        val listener = localityListener
+        if (manager != null && listener != null) {
+            try {
+                manager.removeUpdates(listener)
+            } catch (_: SecurityException) {
+                // Permission may have been revoked while the request was running.
+            }
+        }
+        localityListener = null
+        localityLocationManager = null
+    }
+
+    private fun reverseGeocodeLocality(location: Location) {
+        localityExecutor.execute {
+            try {
+                @Suppress("DEPRECATION")
+                val address = Geocoder(this, Locale.getDefault())
+                    .getFromLocation(location.latitude, location.longitude, 1)
+                    ?.firstOrNull()
+                val locality = address?.toLocalityText().orEmpty()
+                runOnUiThread {
+                    if (locality.isBlank()) {
+                        finishLocalityError(
+                            "LOCALITY_UNAVAILABLE",
+                            "Your locality could not be identified. You can enter it manually instead.",
+                        )
+                    } else {
+                        finishLocalitySuccess(locality)
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    finishLocalityError(
+                        "LOCALITY_UNAVAILABLE",
+                        "Your locality could not be identified. You can enter it manually instead.",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun Address.toLocalityText(): String {
+        return listOfNotNull(
+            subLocality?.trim()?.takeIf { it.isNotEmpty() },
+            locality?.trim()?.takeIf { it.isNotEmpty() },
+            adminArea?.trim()?.takeIf { it.isNotEmpty() },
+            countryName?.trim()?.takeIf { it.isNotEmpty() },
+        ).distinct().joinToString(", ")
+    }
+
+    private fun finishLocalitySuccess(locality: String) {
+        val result = pendingLocalityResult ?: return
+        pendingLocalityResult = null
+        clearLocalityLocationRequest()
+        result.success(mapOf("locality" to locality))
+    }
+
+    private fun finishLocalityError(code: String, message: String) {
+        val result = pendingLocalityResult ?: return
+        pendingLocalityResult = null
+        clearLocalityLocationRequest()
+        result.error(code, message, null)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != localityPermissionRequestCode || pendingLocalityResult == null) return
+        if (hasLocationPermission()) {
+            beginLocalityLookup()
+        } else {
+            finishLocalityError(
+                "LOCATION_DENIED",
+                "Location was not shared. You can enter your locality manually instead.",
+            )
         }
     }
 

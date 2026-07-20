@@ -215,12 +215,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.pop(context, _VoiceFailureAction.retry),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFF4C8),
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555), width: 1.5),
+            ),
             child: const Text('Try again'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, _VoiceFailureAction.manual),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB64E70),
+              backgroundColor: const Color(0xFF9C2D55),
               foregroundColor: Colors.white,
             ),
             child: const Text('Add manually'),
@@ -427,15 +432,12 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
         setState(() {
           if (result.finalResult) {
             if (segment != _lastFinalSegment) {
-              _completedTranscript = _joinTranscript(
-                _completedTranscript,
-                segment,
-              );
+              _completedTranscript = _mergeTranscript(_transcript, segment);
               _lastFinalSegment = segment;
             }
             _transcript = _completedTranscript;
           } else {
-            _transcript = _joinTranscript(_completedTranscript, segment);
+            _transcript = _mergeTranscript(_completedTranscript, segment);
           }
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -450,17 +452,55 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
     );
   }
 
-  String _joinTranscript(String first, String second) {
-    if (first.isEmpty) return second;
-    if (second.startsWith(first)) return second;
-    return '$first $second';
+  /// Android speech recognition can deliver a final result for only the last
+  /// phrase after a pause. Keep the earlier partial result instead of letting
+  /// that last phrase replace the beginning of the request.
+  String _mergeTranscript(String first, String second) {
+    final existing = first.trim();
+    final incoming = second.trim();
+    if (existing.isEmpty) return incoming;
+    if (incoming.isEmpty ||
+        existing == incoming ||
+        existing.endsWith(incoming)) {
+      return existing;
+    }
+    if (incoming.startsWith(existing) || incoming.contains(existing)) {
+      return incoming;
+    }
+
+    final existingWords = existing.split(RegExp(r'\s+'));
+    final incomingWords = incoming.split(RegExp(r'\s+'));
+    final maxOverlap = existingWords.length < incomingWords.length
+        ? existingWords.length
+        : incomingWords.length;
+    for (var overlap = maxOverlap; overlap > 0; overlap--) {
+      final existingSuffix = existingWords.sublist(
+        existingWords.length - overlap,
+      );
+      final incomingPrefix = incomingWords.sublist(0, overlap);
+      if (_sameWords(existingSuffix, incomingPrefix)) {
+        return [...existingWords, ...incomingWords.sublist(overlap)].join(' ');
+      }
+    }
+    return '$existing $incoming';
+  }
+
+  bool _sameWords(List<String> first, List<String> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].toLowerCase() != second[index].toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> _stopListening() async {
     if (!_holding && !_starting) return;
     setState(() => _holding = false);
     await _speech.stop();
-    await Future<void>.delayed(const Duration(milliseconds: 250));
+    // Give the recognizer enough time to deliver its trailing final fragment.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     if (_transcript.trim().isEmpty) {
       setState(

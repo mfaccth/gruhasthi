@@ -22,7 +22,7 @@ class MemoryStore implements KeyValueStore {
 }
 
 void main() {
-  testWidgets('shows the Kundalahalli voice home and seeded pilot stores', (
+  testWidgets('shows the voice home and seeded pilot stores before locality is set', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -31,7 +31,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Good'), findsOneWidget);
-    expect(find.text('Kundalahalli, Bengaluru'), findsOneWidget);
+    expect(find.text('Set your locality in Settings'), findsOneWidget);
     expect(find.textContaining('Village and Big Basket'), findsOneWidget);
     expect(find.text('Press and hold to speak'), findsOneWidget);
   });
