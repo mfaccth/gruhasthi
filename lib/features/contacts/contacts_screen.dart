@@ -1,3 +1,6 @@
+// TODO(voice-capture): remove legacy local merge helpers in a UI-only cleanup.
+// ignore_for_file: unused_field, unused_element
+
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
@@ -5,8 +8,10 @@ import '../../data/household_repository.dart';
 import '../../domain/household_models.dart';
 import '../help/app_help.dart';
 import '../settings/settings_screen.dart';
+import '../stores/stores_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
+import '../voice/voice_transcript_accumulator.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({
@@ -123,6 +128,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       transcript,
       data.stores.map((store) => store.name).toList(),
     );
+    if (await _openStoreWhatsAppFromVoice(ruleCommand, data)) return;
     if (_isUsableContactCommand(ruleCommand)) {
       await _openContactEditor(ruleCommand as AddContactVoiceCommand);
       return;
@@ -152,6 +158,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       );
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
+      if (await _openStoreWhatsAppFromVoice(command, data)) return;
       if (_isUsableContactCommand(command)) {
         await _openContactEditor(command as AddContactVoiceCommand);
         return;
@@ -172,6 +179,33 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   bool _isUsableContactCommand(VoiceCommand command) =>
       command is AddContactVoiceCommand && command.name.trim().isNotEmpty;
+
+  Future<bool> _openStoreWhatsAppFromVoice(
+    VoiceCommand command,
+    HouseholdData data,
+  ) async {
+    if (command is! UpdateStoreWhatsAppVoiceCommand) return false;
+    Store? store;
+    for (final entry in data.stores) {
+      if (entry.name.toLowerCase() == command.storeName.toLowerCase()) {
+        store = entry;
+        break;
+      }
+    }
+    if (store == null || !mounted) return false;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StoresScreen(
+          repository: widget.repository,
+          initialStoreId: store!.id,
+          initialWhatsApp: command.whatsAppNumber,
+        ),
+      ),
+    );
+    await _refresh();
+    return true;
+  }
 
   Future<void> _openContactEditor(AddContactVoiceCommand command) =>
       _edit(null, initialName: command.name, initialPhone: command.phoneNumber);
@@ -433,6 +467,8 @@ class _ContactVoiceCaptureSheet extends StatefulWidget {
 
 class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
   final SpeechToText _speech = SpeechToText();
+  final VoiceTranscriptAccumulator _voiceTranscript =
+      VoiceTranscriptAccumulator();
   final ScrollController _transcriptScrollController = ScrollController();
   String _transcript = '';
   String _completedTranscript = '';
@@ -450,6 +486,7 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
       _transcript = '';
       _completedTranscript = '';
       _lastFinalSegment = '';
+      _voiceTranscript.reset();
     });
     final available = await _speech.initialize(
       onError: (error) {
@@ -480,15 +517,8 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
         final segment = result.recognizedWords.trim();
         if (segment.isEmpty) return;
         setState(() {
-          if (result.finalResult) {
-            if (segment != _lastFinalSegment) {
-              _completedTranscript = _mergeTranscript(_transcript, segment);
-              _lastFinalSegment = segment;
-            }
-            _transcript = _completedTranscript;
-          } else {
-            _transcript = _mergeTranscript(_completedTranscript, segment);
-          }
+          _voiceTranscript.addResult(segment, isFinal: result.finalResult);
+          _transcript = _voiceTranscript.transcript;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_transcriptScrollController.hasClients) return;
@@ -547,7 +577,11 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
 
   Future<void> _stopListening() async {
     if (!_holding && !_starting) return;
-    setState(() => _holding = false);
+    setState(() {
+      _holding = false;
+      _voiceTranscript.commitPartial();
+      _transcript = _voiceTranscript.transcript;
+    });
     await _speech.stop();
     // Give the recognizer enough time to deliver its trailing final fragment.
     await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -558,7 +592,7 @@ class _ContactVoiceCaptureSheetState extends State<_ContactVoiceCaptureSheet> {
       );
       return;
     }
-    Navigator.pop(context, _transcript.trim());
+    Navigator.pop(context, _voiceTranscript.finish());
   }
 
   @override

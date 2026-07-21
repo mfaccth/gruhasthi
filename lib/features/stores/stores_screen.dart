@@ -10,11 +10,13 @@ class StoresScreen extends StatefulWidget {
     required this.repository,
     this.initialName,
     this.initialWhatsApp = '',
+    this.initialStoreId,
   });
 
   final HouseholdRepository repository;
   final String? initialName;
   final String initialWhatsApp;
+  final String? initialStoreId;
 
   @override
   State<StoresScreen> createState() => _StoresScreenState();
@@ -27,17 +29,30 @@ class _StoresScreenState extends State<StoresScreen> {
   void initState() {
     super.initState();
     _data = widget.repository.load();
-    if (widget.initialName != null) {
+    if (widget.initialName != null || widget.initialStoreId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _edit(
-            null,
-            initialName: widget.initialName!,
-            initialWhatsApp: widget.initialWhatsApp,
-          );
-        }
+        if (mounted) _openInitialEditor();
       });
     }
+  }
+
+  Future<void> _openInitialEditor() async {
+    final data = await widget.repository.load();
+    if (!mounted) return;
+    Store? existingStore;
+    if (widget.initialStoreId != null) {
+      for (final store in data.stores) {
+        if (store.id == widget.initialStoreId) {
+          existingStore = store;
+          break;
+        }
+      }
+    }
+    await _edit(
+      existingStore,
+      initialName: widget.initialName ?? '',
+      initialWhatsApp: widget.initialWhatsApp,
+    );
   }
 
   Future<void> _refresh() async {
@@ -209,7 +224,11 @@ class _StoreEditorDialogState extends State<StoreEditorDialog> {
       text: widget.store?.address ?? widget.initialAddress,
     );
     _whatsApp = TextEditingController(
-      text: widget.store?.whatsAppNumber ?? widget.initialWhatsApp,
+      // A number supplied by voice is a proposed update and must be shown for
+      // review, even when this store already has a saved WhatsApp number.
+      text: widget.initialWhatsApp.isNotEmpty
+          ? widget.initialWhatsApp
+          : (widget.store?.whatsAppNumber ?? ''),
     );
   }
 
