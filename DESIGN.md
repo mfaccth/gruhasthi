@@ -1,10 +1,59 @@
-# Household Automation — Design and Delivery Plan
+# Gruhasthi — Design and Delivery Plan
+
+**Status:** Android pilot release; updated 21 July 2026.
+
+> This document contains both the original delivery plan and the current
+> implementation record. Where a planned item conflicts with the release-state
+> section below, the release-state section is authoritative.
+
+## Release-state summary
+
+### Implemented in the Android pilot
+
+- Flutter Android app for a single English-speaking user, with local
+  persistence through a `HouseholdRepository` backed by SharedPreferences.
+- Pastel pink-to-light-yellow visual system, Gruhasthi logo, Home menu, Help,
+  and a guided app tour.
+- User name and locality settings, including optional Android location-based
+  locality suggestion.
+- Touch and press-and-hold voice flows for contacts, stores, grocery lists,
+  WhatsApp-number updates, and navigation.
+- Shared transcript accumulator on Home, Contacts, and Grocery capture
+  surfaces. It retains speech across pause-driven recognition restarts and
+  replaces partial hypotheses rather than appending them. See
+  [voice transcript capture design](docs/voice-transcript-capture-design.md).
+- Deterministic command parsing for common commands, followed automatically by
+  optional on-device Gemma fallback when a safe action cannot be identified.
+- E2B/E4B on-device Gemma model selection, download, integrity validation, and
+  activation. The model remains optional and local to the phone.
+- Google Places-backed store discovery when the developer supplies a properly
+  restricted Android API key.
+- WhatsApp message review and handoff, followed by an explicit user choice to
+  keep the list or mark it sent and clear it.
+- UPI external handoff for a reviewed payment draft. No direct Google Pay API
+  payment integration or payment-completion tracking exists.
+
+### Deliberately not implemented
+
+- Encrypted database, full activity history, export/delete data controls,
+  contact-picker import, list reordering/check-off, cloud sync, multi-user
+  collaboration, delivery/order tracking, and iOS support.
+- Verification of WhatsApp delivery/sending or UPI payment completion.
+
+### Active engineering follow-up
+
+The model distribution work and related validation are tracked in
+[TECH_DEBT.md](TECH_DEBT.md). Other future scope should be recorded there
+before implementation rather than inferred from the original phase checklist.
 
 ## 1. Purpose
 
 Household Automation is a voice-first mobile app for recurring household errands. It lets a user maintain a grocery list per neighbourhood store, prepare a WhatsApp message containing that list, and prepare a UPI payment for a saved store or contact.
 
-The first release targets Android in India. It supports English, is designed for one user per device, and begins with a Kundalahalli, Bengaluru pilot. iOS follows from the same product and domain design.
+The first release targets Android in India. It supports English and is designed
+for one user per device. It was seeded with Village and Big Basket for the
+Kundalahalli, Bengaluru pilot, but location is now user-configurable and is not
+limited to Bengaluru. iOS follows from the same product and domain design.
 
 ## 2. Product principles
 
