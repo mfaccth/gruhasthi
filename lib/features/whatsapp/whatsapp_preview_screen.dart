@@ -53,12 +53,43 @@ class _WhatsAppPreviewScreenState extends State<WhatsAppPreviewScreen> {
         _error = 'Could not open WhatsApp. Check that it is installed.';
       }
     });
+    if (launched && mounted) Navigator.pop(context, true);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Review WhatsApp message')),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        toolbarHeight: 116,
+        flexibleSpace: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.only(left: 8, right: 4),
+                    foregroundColor: const Color(0xFF796C70),
+                  ),
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Back'),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Text(
+                    'Review WhatsApp message',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -106,6 +137,12 @@ class _WhatsAppPreviewScreenState extends State<WhatsAppPreviewScreen> {
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: _launching ? null : _openWhatsApp,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF9C2D55),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFFE6A6B9),
+                    disabledForegroundColor: Colors.white70,
+                  ),
                   icon: const Icon(Icons.send_outlined),
                   label: Text(
                     _launching ? 'Opening WhatsApp…' : 'Continue to WhatsApp',
