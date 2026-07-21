@@ -347,22 +347,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 ],
               ),
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Color(0xFFFFF1C9),
-                    child: Icon(
-                      Icons.contacts_outlined,
-                      color: Color(0xFF703146),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Contacts',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Contacts',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
               ),
               const SizedBox(height: 22),
               Expanded(

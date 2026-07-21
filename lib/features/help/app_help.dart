@@ -18,93 +18,97 @@ class AppHelpSheet extends StatelessWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Help & app tour',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            const Text('A quick guide to getting things done with Gruhasthi.'),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: () => Navigator.pop(context, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB64E70),
-                foregroundColor: Colors.white,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Help & app tour',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              icon: const Icon(Icons.play_circle_outline),
-              label: const Text('Take the app tour'),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Voice commands',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 6),
-            const Text('Press and hold the microphone, then try a phrase below.'),
-            const SizedBox(height: 10),
-            _VoiceCommandCategory(
-              category: VoiceHelpCategory.contacts,
-              selected: initialVoiceCategory == VoiceHelpCategory.contacts,
-              icon: Icons.contacts_outlined,
-              title: 'Contacts',
-              phrases: const [
-                '“Add contact Vasu, phone number 9845051410.”',
-                '“Show me contacts.”',
-              ],
-            ),
-            _VoiceCommandCategory(
-              category: VoiceHelpCategory.groceryLists,
-              selected:
-                  initialVoiceCategory == VoiceHelpCategory.groceryLists,
-              icon: Icons.shopping_basket_outlined,
-              title: 'Grocery lists',
-              phrases: const [
-                '“Add 1 kg rice to Village.”',
-                '“Add half litre milk to Big Basket.”',
-                '“Open Village list.”',
-              ],
-            ),
-            _VoiceCommandCategory(
-              category: VoiceHelpCategory.stores,
-              selected: initialVoiceCategory == VoiceHelpCategory.stores,
-              icon: Icons.storefront_outlined,
-              title: 'Stores',
-              phrases: const [
-                '“Add store Star Bazaar.”',
-                '“Show me stores.”',
-              ],
-            ),
-            _VoiceCommandCategory(
-              category: VoiceHelpCategory.navigation,
-              selected: initialVoiceCategory == VoiceHelpCategory.navigation,
-              icon: Icons.navigation_outlined,
-              title: 'Navigation',
-              phrases: const [
-                '“Go to contacts list.”',
-                '“Show grocery lists.”',
-              ],
-            ),
-            const _HelpExample(
-              icon: Icons.shopping_basket_outlined,
-              title: 'Grocery lists',
-              detail:
-                  'Create a separate list for each store, review it, then send it on WhatsApp.',
-            ),
-            const _HelpExample(
-              icon: Icons.currency_rupee,
-              title: 'Payments',
-              detail:
-                  'Gruhasthi opens the payment app; you review and confirm the payment there.',
-            ),
-            const _HelpExample(
-              icon: Icons.memory_outlined,
-              title: 'On-device Gemma',
-              detail:
-                  'If the built-in voice parser is unsure, Gemma can understand requests privately on your phone.',
-            ),
+              const SizedBox(height: 8),
+              const Text(
+                'A quick guide to getting things done with Gruhasthi.',
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFB64E70),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.play_circle_outline),
+                label: const Text('Take the app tour'),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Voice commands',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Press and hold the microphone, then try a phrase below.',
+              ),
+              const SizedBox(height: 10),
+              _VoiceCommandCategory(
+                category: VoiceHelpCategory.contacts,
+                selected: initialVoiceCategory == VoiceHelpCategory.contacts,
+                icon: Icons.contacts_outlined,
+                title: 'Contacts',
+                phrases: const [
+                  '“Add contact Vasu, phone number 9845051410.”',
+                  '“Show me contacts.”',
+                ],
+              ),
+              _VoiceCommandCategory(
+                category: VoiceHelpCategory.groceryLists,
+                selected:
+                    initialVoiceCategory == VoiceHelpCategory.groceryLists,
+                icon: Icons.shopping_basket_outlined,
+                title: 'Grocery lists',
+                phrases: const [
+                  '“Add 1 kg rice to Village.”',
+                  '“Add half litre milk to Big Basket.”',
+                  '“Open Village list.”',
+                ],
+              ),
+              _VoiceCommandCategory(
+                category: VoiceHelpCategory.stores,
+                selected: initialVoiceCategory == VoiceHelpCategory.stores,
+                icon: Icons.storefront_outlined,
+                title: 'Stores',
+                phrases: const [
+                  '“Add store Star Bazaar.”',
+                  '“Show me stores.”',
+                ],
+              ),
+              _VoiceCommandCategory(
+                category: VoiceHelpCategory.navigation,
+                selected: initialVoiceCategory == VoiceHelpCategory.navigation,
+                icon: Icons.navigation_outlined,
+                title: 'Navigation',
+                phrases: const [
+                  '“Go to contacts list.”',
+                  '“Show grocery lists.”',
+                ],
+              ),
+              const _HelpExample(
+                icon: Icons.shopping_basket_outlined,
+                title: 'Grocery lists',
+                detail:
+                    'Create a separate list for each store, review it, then send it on WhatsApp.',
+              ),
+              const _HelpExample(
+                icon: Icons.currency_rupee,
+                title: 'Payments',
+                detail:
+                    'Gruhasthi opens the payment app; you review and confirm the payment there.',
+              ),
+              const _HelpExample(
+                icon: Icons.memory_outlined,
+                title: 'On-device Gemma',
+                detail:
+                    'If the built-in voice parser is unsure, Gemma can understand requests privately on your phone.',
+              ),
             ],
           ),
         ),
@@ -233,9 +237,9 @@ class _AppTourScreenState extends State<AppTourScreen> {
     ),
     _TourPage(
       icon: Icons.memory_outlined,
-      title: 'Private on-device help',
+      title: 'Extra help, kept private',
       message:
-          'When needed, Gemma can understand requests privately on your device. You always review before saving.',
+          'If Gruhasthi needs more help with a voice request, you can optionally install a private assistant in Settings. It works on this phone, is powered by Gemma, and you always review before saving.',
     ),
   ];
 

@@ -87,7 +87,37 @@ class _StoresScreenState extends State<StoresScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Stores')),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        toolbarHeight: 116,
+        flexibleSpace: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.only(left: 8, right: 4),
+                    foregroundColor: const Color(0xFF796C70),
+                  ),
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Back'),
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Text(
+                    'Stores',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         tooltip: 'Add store',
         onPressed: () => _edit(null),
