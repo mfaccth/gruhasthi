@@ -84,6 +84,12 @@ sealed class VoiceCommand {
       final addPattern = RegExp(
         '^(?:please\\s+)?add\\s+(.+?)\\s+to\\s+(?:the\\s+)?$flexibleStoreName(?:\\s+list)?[.!]?\\s*',
       );
+      final sendPattern = RegExp(
+        '^(?:please\\s+)?(?:send|submit|order)\\s+(?:my\\s+|the\\s+)?$flexibleStoreName(?:\\s+(?:grocery\\s+)?list)?(?:\\s+on\\s+whats\\s*app)?[.!]?\\s*${r'$'}',
+      );
+      if (sendPattern.hasMatch(normalized)) {
+        return SendGroceryListVoiceCommand(storeName: store);
+      }
       final addMatch = addPattern.firstMatch(normalized);
       if (addMatch != null) {
         final grocery = groceryDetails(addMatch.group(1)!.trim());
@@ -156,6 +162,9 @@ sealed class VoiceCommand {
           unit: unit,
         ),
       'open_grocery' => OpenGroceryVoiceCommand(storeName: store),
+      'send_grocery' when store != null => SendGroceryListVoiceCommand(
+        storeName: store,
+      ),
       'add_contact' when name.isNotEmpty => AddContactVoiceCommand(
         name: displayContactName(name),
         phoneNumber: phone,
@@ -386,6 +395,12 @@ class UpdateStoreWhatsAppVoiceCommand extends VoiceCommand {
   final String whatsAppNumber;
 }
 
+class SendGroceryListVoiceCommand extends VoiceCommand {
+  const SendGroceryListVoiceCommand({required this.storeName});
+
+  final String storeName;
+}
+
 class UnrecognizedVoiceCommand extends VoiceCommand {
   const UnrecognizedVoiceCommand();
 }
@@ -607,6 +622,10 @@ class _GemmaResultCard extends StatelessWidget {
           Icons.edit_outlined,
           'Update $storeName WhatsApp number: $whatsAppNumber',
         ),
+      SendGroceryListVoiceCommand(:final storeName) => (
+        Icons.send_outlined,
+        'Send $storeName list on WhatsApp',
+      ),
       UnrecognizedVoiceCommand() => (
         Icons.help_outline,
         'No safe action was identified from this request',
@@ -704,6 +723,11 @@ class _CommandReview extends StatelessWidget {
             foregroundColor: Colors.white,
           ),
           child: Text('Review $storeName WhatsApp number'),
+        );
+      case SendGroceryListVoiceCommand(:final storeName):
+        return FilledButton(
+          onPressed: () => Navigator.pop(context, command),
+          child: Text('Review $storeName order'),
         );
       case OpenGroceryVoiceCommand(:final storeName):
         return FilledButton(

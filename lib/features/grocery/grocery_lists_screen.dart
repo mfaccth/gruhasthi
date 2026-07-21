@@ -16,9 +16,14 @@ import '../voice/voice_command_sheet.dart';
 import '../voice/voice_transcript_accumulator.dart';
 
 class GroceryListsScreen extends StatefulWidget {
-  const GroceryListsScreen({super.key, required this.repository});
+  const GroceryListsScreen({
+    super.key,
+    required this.repository,
+    this.initialStoreIdToSend,
+  });
 
   final HouseholdRepository repository;
+  final String? initialStoreIdToSend;
 
   @override
   State<GroceryListsScreen> createState() => _GroceryListsScreenState();
@@ -33,6 +38,18 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
   void initState() {
     super.initState();
     _data = widget.repository.load();
+    if (widget.initialStoreIdToSend != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final data = await widget.repository.load();
+        if (!mounted) return;
+        for (final store in data.stores) {
+          if (store.id == widget.initialStoreIdToSend) {
+            await _sendStoreList(store, data.itemsFor(store.id));
+            break;
+          }
+        }
+      });
+    }
   }
 
   Future<void> _refresh() async {
@@ -46,7 +63,7 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
     GroceryQuantityUnit initialUnit = GroceryQuantityUnit.count,
     bool voiceReview = false,
   }) async {
-    await Navigator.push<void>(
+    final handedOff = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => GroceryListEditor(
@@ -60,6 +77,9 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
       ),
     );
     await _refresh();
+    if (handedOff == true && mounted) {
+      await _confirmSentAndMaybeClear(store);
+    }
   }
 
   Future<void> _chooseStore(HouseholdData data) async {
@@ -186,6 +206,11 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
         if (store == null) return false;
         await _openEditor(store);
         return true;
+      case SendGroceryListVoiceCommand(:final storeName):
+        final store = _storeNamed(data, storeName);
+        if (store == null) return false;
+        await _sendStoreList(store, data.itemsFor(store.id));
+        return true;
       case UpdateStoreWhatsAppVoiceCommand(
         :final storeName,
         :final whatsAppNumber,
@@ -207,6 +232,59 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
       default:
         return false;
     }
+  }
+
+  Future<void> _sendStoreList(Store store, List<GroceryItem> items) async {
+    if (items.isEmpty || !hasUsableWhatsAppNumber(store.whatsAppNumber)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add items and a valid WhatsApp number first.'),
+        ),
+      );
+      return;
+    }
+    final handedOff = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WhatsAppPreviewScreen(store: store, items: items),
+      ),
+    );
+    if (handedOff != true || !mounted) return;
+    await _confirmSentAndMaybeClear(store);
+  }
+
+  Future<void> _confirmSentAndMaybeClear(Store store) async {
+    final clear = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Order opened in WhatsApp'),
+        content: Text('Did you send the ${store.name} order?'),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF8F3555),
+              side: const BorderSide(color: Color(0xFF8F3555), width: 1.5),
+            ),
+            child: const Text('Keep list'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF9C2D55),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Mark sent & clear'),
+          ),
+        ],
+      ),
+    );
+    if (clear != true) return;
+    final data = await widget.repository.load();
+    await widget.repository.save(
+      data.copyWith(itemsByStore: {...data.itemsByStore, store.id: const []}),
+    );
+    await _refresh();
   }
 
   void _showGemmaWorking() {
@@ -1114,7 +1192,7 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
     }
   }
 
-  void _openWhatsAppPreview() {
+  Future<void> _openWhatsAppPreview() async {
     if (!hasUsableWhatsAppNumber(widget.store.whatsAppNumber)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1129,13 +1207,14 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
       );
       return;
     }
-    Navigator.push<void>(
+    final handedOff = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) =>
             WhatsAppPreviewScreen(store: widget.store, items: _items),
       ),
     );
+    if (handedOff == true && mounted) Navigator.pop(context, true);
   }
 
   @override

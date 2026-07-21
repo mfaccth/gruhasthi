@@ -67,11 +67,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _openGroceryLists() async {
+  Future<void> _openGroceryLists({String? initialStoreIdToSend}) async {
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => GroceryListsScreen(repository: widget.repository),
+        builder: (_) => GroceryListsScreen(
+          repository: widget.repository,
+          initialStoreIdToSend: initialStoreIdToSend,
+        ),
       ),
     );
     if (mounted) setState(() => _data = widget.repository.load());
@@ -269,6 +272,11 @@ class _HomeScreenState extends State<HomeScreen> {
           return true;
         }
         return false;
+      case SendGroceryListVoiceCommand(:final storeName):
+        final store = _findStore(data, storeName);
+        if (store == null) return false;
+        await _openGroceryLists(initialStoreIdToSend: store.id);
+        return true;
       case UnrecognizedVoiceCommand():
         return false;
     }
@@ -394,6 +402,13 @@ class _HomeScreenState extends State<HomeScreen> {
         .map((store) => store.name)
         .toList(growable: false);
     final ruleCommand = VoiceCommand.fromTranscript(transcript, storeNames);
+    if (ruleCommand case SendGroceryListVoiceCommand(:final storeName)) {
+      final store = _findStore(data, storeName);
+      if (store != null) {
+        await _openGroceryLists(initialStoreIdToSend: store.id);
+        return true;
+      }
+    }
     if (ruleCommand case AddGroceryVoiceCommand(
       :final storeName,
       :final item,
