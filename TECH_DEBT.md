@@ -1,5 +1,7 @@
 # Open items and technical debt
 
+**Last reviewed:** 21 July 2026
+
 ## High priority before wider distribution
 
 ### Signed remote Gemma model manifest
