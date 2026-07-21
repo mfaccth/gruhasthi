@@ -7,6 +7,7 @@ import 'package:gruhasthi/data/secure_payment_repository.dart';
 import 'package:gruhasthi/features/voice/voice_command_sheet.dart';
 import 'package:gruhasthi/features/whatsapp/whatsapp_message.dart';
 import 'package:gruhasthi/features/home/home_screen.dart';
+import 'package:gruhasthi/features/stores/stores_screen.dart';
 import 'package:gruhasthi/domain/household_models.dart';
 
 class MemoryStore implements KeyValueStore {
@@ -22,19 +23,20 @@ class MemoryStore implements KeyValueStore {
 }
 
 void main() {
-  testWidgets('shows the voice home and seeded pilot stores before locality is set', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      HouseholdApp(repository: HouseholdRepository(storage: MemoryStore())),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'shows the voice home and seeded pilot stores before locality is set',
+    (tester) async {
+      await tester.pumpWidget(
+        HouseholdApp(repository: HouseholdRepository(storage: MemoryStore())),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.textContaining('Good'), findsOneWidget);
-    expect(find.text('Set your locality in Settings'), findsOneWidget);
-    expect(find.textContaining('Village and Big Basket'), findsOneWidget);
-    expect(find.text('Press and hold to speak'), findsOneWidget);
-  });
+      expect(find.textContaining('Good'), findsOneWidget);
+      expect(find.text('Set your locality in Settings'), findsOneWidget);
+      expect(find.textContaining('Village and Big Basket'), findsOneWidget);
+      expect(find.text('Press and hold to speak'), findsOneWidget);
+    },
+  );
 
   testWidgets('shows the voice command review sheet', (tester) async {
     await tester.pumpWidget(
@@ -237,6 +239,70 @@ void main() {
 
     expect(command.name, 'Star Bazaar');
     expect(command.whatsAppNumber, '9980199891');
+  });
+
+  test('recognizes updating an existing store WhatsApp number', () {
+    final command = VoiceCommand.fromTranscript(
+      'set Village WhatsApp number to 99801 01541',
+      const ['Village', 'Big Basket'],
+    );
+
+    expect(command, isA<UpdateStoreWhatsAppVoiceCommand>());
+    final update = command as UpdateStoreWhatsAppVoiceCommand;
+    expect(update.storeName, 'Village');
+    expect(update.whatsAppNumber, '9980101541');
+  });
+
+  test('recognizes a current-store WhatsApp update in store context', () {
+    final command = VoiceCommand.fromTranscript(
+      'update WhatsApp number to 99801 01541',
+      const ['Village'],
+    );
+
+    expect(command, isA<UpdateStoreWhatsAppVoiceCommand>());
+    final update = command as UpdateStoreWhatsAppVoiceCommand;
+    expect(update.storeName, 'Village');
+    expect(update.whatsAppNumber, '9980101541');
+  });
+
+  test('maps Gemma store WhatsApp updates to a safe review command', () {
+    final command = VoiceCommand.fromGemmaResult(
+      const {
+        'action': 'update_store_whatsapp',
+        'store': 'bigbasket',
+        'whatsAppNumber': '99801 01541',
+      },
+      const ['Village', 'Big Basket'],
+    );
+
+    expect(command, isA<UpdateStoreWhatsAppVoiceCommand>());
+    final update = command as UpdateStoreWhatsAppVoiceCommand;
+    expect(update.storeName, 'Big Basket');
+    expect(update.whatsAppNumber, '9980101541');
+  });
+
+  testWidgets('voice WhatsApp value overrides a saved store value for review', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: StoreEditorDialog(
+            store: Store(
+              id: 'big-basket',
+              name: 'Big Basket',
+              whatsAppNumber: '9845598745',
+            ),
+            initialWhatsApp: '9980101541',
+          ),
+        ),
+      ),
+    );
+
+    final whatsAppField = tester.widget<TextField>(
+      find.byType(TextField).at(2),
+    );
+    expect(whatsAppField.controller!.text, '9980101541');
   });
 
   test('maps a validated on-device Gemma response to an existing command', () {

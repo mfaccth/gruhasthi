@@ -1,3 +1,6 @@
+// TODO(voice-capture): remove legacy local merge helpers in a UI-only cleanup.
+// ignore_for_file: unused_field, unused_element
+
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
@@ -13,6 +16,7 @@ import '../settings/device_locality_detector.dart';
 import '../stores/stores_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
+import '../voice/voice_transcript_accumulator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -31,6 +35,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Future<HouseholdData> _data;
   final SpeechToText _holdToTalkSpeech = SpeechToText();
+  final VoiceTranscriptAccumulator _voiceTranscript =
+      VoiceTranscriptAccumulator();
   final GemmaCommandInterpreter _gemmaInterpreter =
       const GemmaCommandInterpreter();
   bool _holdingMicrophone = false;
@@ -175,10 +181,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openVoice({String initialTranscript = ''}) async {
     final data = await widget.repository.load();
     if (!mounted) return;
+    if (await _tryHandleStoreWhatsAppVoice(initialTranscript, data) ||
+        !mounted) {
+      return;
+    }
     if (await _tryHandleContactVoice(initialTranscript, data) || !mounted) {
       return;
     }
     if (await _tryHandleGroceryVoice(initialTranscript, data) || !mounted) {
+      return;
+    }
+    if (await _tryHandleGemmaFallback(initialTranscript, data) || !mounted) {
       return;
     }
     final command = await showModalBottomSheet<VoiceCommand>(
@@ -200,12 +213,22 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (!mounted || command == null) return;
+    await _applyVoiceCommand(command, data);
+  }
+
+  Future<bool> _applyVoiceCommand(
+    VoiceCommand command,
+    HouseholdData data,
+  ) async {
     switch (command) {
       case OpenGroceryVoiceCommand(storeName: null):
         await _openGroceryLists();
+        return true;
       case OpenGroceryVoiceCommand(:final storeName):
         final store = _findStore(data, storeName!);
-        if (store != null) await _openGroceryEditor(store);
+        if (store == null) return false;
+        await _openGroceryEditor(store);
+        return true;
       case AddGroceryVoiceCommand(
         :final storeName,
         :final item,
@@ -221,17 +244,63 @@ class _HomeScreenState extends State<HomeScreen> {
             initialUnit: unit,
             voiceReview: true,
           );
+          return true;
         }
+        return false;
       case AddContactVoiceCommand(:final name, :final phoneNumber):
         await _openContactsForVoice(name, phoneNumber);
+        return true;
       case OpenStoresVoiceCommand():
         await _openStores();
+        return true;
       case OpenContactsVoiceCommand():
         await _openContacts();
+        return true;
       case AddStoreVoiceCommand(:final name, :final whatsAppNumber):
         await _openStoresForVoice(name, whatsAppNumber);
+        return true;
+      case UpdateStoreWhatsAppVoiceCommand(
+        :final storeName,
+        :final whatsAppNumber,
+      ):
+        final store = _findStore(data, storeName);
+        if (store != null) {
+          await _openStoreWhatsAppForVoice(store, whatsAppNumber);
+          return true;
+        }
+        return false;
       case UnrecognizedVoiceCommand():
-        break;
+        return false;
+    }
+  }
+
+  Future<bool> _tryHandleGemmaFallback(
+    String transcript,
+    HouseholdData data,
+  ) async {
+    if (transcript.trim().isEmpty) return false;
+    final status = await _gemmaInterpreter.status();
+    if (!mounted || !status.isReady) return false;
+
+    _showGemmaWorking();
+    try {
+      final response = await _gemmaInterpreter.interpret(
+        transcript: transcript,
+        storeNames: data.stores
+            .map((store) => store.name)
+            .toList(growable: false),
+      );
+      final command = VoiceCommand.fromGemmaResult(
+        response,
+        data.stores.map((store) => store.name).toList(growable: false),
+        transcript: transcript,
+      );
+      if (!mounted) return true;
+      Navigator.of(context, rootNavigator: true).pop();
+      return _applyVoiceCommand(command, data);
+    } on Exception catch (_) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      return false;
     }
   }
 
@@ -299,6 +368,21 @@ class _HomeScreenState extends State<HomeScreen> {
         'I could not understand that request on this device.',
       );
     }
+    return true;
+  }
+
+  Future<bool> _tryHandleStoreWhatsAppVoice(
+    String transcript,
+    HouseholdData data,
+  ) async {
+    final command = VoiceCommand.fromTranscript(
+      transcript,
+      data.stores.map((store) => store.name).toList(growable: false),
+    );
+    if (command is! UpdateStoreWhatsAppVoiceCommand) return false;
+    final store = _findStore(data, command.storeName);
+    if (store == null) return false;
+    await _openStoreWhatsAppForVoice(store, command.whatsAppNumber);
     return true;
   }
 
@@ -561,6 +645,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _heldTranscript = '';
       _completedTranscript = '';
       _lastFinalSegment = '';
+      _voiceTranscript.reset();
     });
 
     final available = await _holdToTalkSpeech.initialize(
@@ -584,7 +669,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onHoldToTalkStatus(String status) {
     final listening = status == 'listening';
-    if (mounted) setState(() => _speechListening = listening);
+    if (mounted) {
+      setState(() {
+        _speechListening = listening;
+        if (!listening) {
+          _voiceTranscript.commitPartial();
+          _heldTranscript = _voiceTranscript.transcript;
+        }
+      });
+    }
     if (!listening && _holdingMicrophone && !_startingHoldToTalk) {
       _restartHoldToTalk();
     }
@@ -607,15 +700,8 @@ class _HomeScreenState extends State<HomeScreen> {
         final segment = result.recognizedWords.trim();
         if (!mounted || segment.isEmpty) return;
         setState(() {
-          if (result.finalResult) {
-            if (segment != _lastFinalSegment) {
-              _completedTranscript = _mergeTranscript(_heldTranscript, segment);
-              _lastFinalSegment = segment;
-            }
-            _heldTranscript = _completedTranscript;
-          } else {
-            _heldTranscript = _mergeTranscript(_completedTranscript, segment);
-          }
+          _voiceTranscript.addResult(segment, isFinal: result.finalResult);
+          _heldTranscript = _voiceTranscript.transcript;
         });
       },
       listenOptions: SpeechListenOptions(
@@ -673,11 +759,13 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _holdingMicrophone = false;
       _speechListening = false;
+      _voiceTranscript.commitPartial();
+      _heldTranscript = _voiceTranscript.transcript;
     });
     await _holdToTalkSpeech.stop();
     await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-    final transcript = _heldTranscript.trim();
+    final transcript = _voiceTranscript.finish();
     if (transcript.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -724,6 +812,25 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => StoresScreen(
           repository: widget.repository,
           initialName: name,
+          initialWhatsApp: whatsAppNumber,
+        ),
+      ),
+    );
+    if (mounted) setState(() => _data = widget.repository.load());
+  }
+
+  Future<void> _openStoreWhatsAppForVoice(
+    Store store,
+    String whatsAppNumber,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StoresScreen(
+          repository: widget.repository,
+          initialStoreId: store.id,
           initialWhatsApp: whatsAppNumber,
         ),
       ),

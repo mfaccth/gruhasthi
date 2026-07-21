@@ -52,7 +52,7 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
         private const val systemInstruction = """
             You interpret spoken commands for a local household app.
             Return exactly one JSON object and nothing else. Never include markdown.
-            Allowed actions: add_grocery, open_grocery, add_contact, open_stores, open_contacts, add_store, unknown.
+            Allowed actions: add_grocery, open_grocery, add_contact, open_stores, open_contacts, add_store, update_store_whatsapp, unknown.
             For add_grocery use action, store, item, quantity, unit.
             Quantity is an optional number. Unit must be count, dozen, kg, or litre.
             Put only the grocery name in item; do not include its quantity or unit.
@@ -61,6 +61,7 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
             Example: "show me contacts" must return {"action":"open_contacts"}.
             For add_contact use action, name, phoneNumber.
             For add_store use action, name, whatsAppNumber.
+            For updating an existing store's WhatsApp number use action update_store_whatsapp, store, whatsAppNumber.
             For unknown, action alone is enough.
             Do not propose payment, messaging, deletion, or any action outside this list.
         """
@@ -162,7 +163,7 @@ class GemmaCommandEngine(private val context: Context) : Closeable {
             .joinToString(separator = "") { it.text }
         val parsed = JSONObject(extractJson(responseText))
         val action = parsed.optString("action").trim()
-        if (action !in setOf("add_grocery", "open_grocery", "add_contact", "open_stores", "open_contacts", "add_store", "unknown")) {
+        if (action !in setOf("add_grocery", "open_grocery", "add_contact", "open_stores", "open_contacts", "add_store", "update_store_whatsapp", "unknown")) {
             throw IllegalArgumentException("Gemma returned an unsupported action.")
         }
 

@@ -1,3 +1,6 @@
+// TODO(voice-capture): remove legacy local merge helpers in a UI-only cleanup.
+// ignore_for_file: unused_field, unused_element
+
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
@@ -10,6 +13,7 @@ import '../whatsapp/whatsapp_message.dart';
 import '../whatsapp/whatsapp_preview_screen.dart';
 import '../voice/gemma_command_interpreter.dart';
 import '../voice/voice_command_sheet.dart';
+import '../voice/voice_transcript_accumulator.dart';
 
 class GroceryListsScreen extends StatefulWidget {
   const GroceryListsScreen({super.key, required this.repository});
@@ -181,6 +185,24 @@ class _GroceryListsScreenState extends State<GroceryListsScreen> {
         final store = storeName == null ? null : _storeNamed(data, storeName);
         if (store == null) return false;
         await _openEditor(store);
+        return true;
+      case UpdateStoreWhatsAppVoiceCommand(
+        :final storeName,
+        :final whatsAppNumber,
+      ):
+        final store = _storeNamed(data, storeName);
+        if (store == null) return false;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => StoresScreen(
+              repository: widget.repository,
+              initialStoreId: store.id,
+              initialWhatsApp: whatsAppNumber,
+            ),
+          ),
+        );
+        await _refresh();
         return true;
       default:
         return false;
@@ -480,6 +502,8 @@ class _GroceryVoiceCaptureSheet extends StatefulWidget {
 
 class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
   final SpeechToText _speech = SpeechToText();
+  final VoiceTranscriptAccumulator _voiceTranscript =
+      VoiceTranscriptAccumulator();
   final ScrollController _transcriptScrollController = ScrollController();
   String _transcript = '';
   String _completedTranscript = '';
@@ -499,6 +523,7 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
       _transcript = '';
       _completedTranscript = '';
       _lastFinalSegment = '';
+      _voiceTranscript.reset();
     });
     final available = await _speech.initialize(
       onStatus: _onSpeechStatus,
@@ -522,7 +547,15 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
 
   void _onSpeechStatus(String status) {
     final listening = status == 'listening';
-    if (mounted) setState(() => _speechListening = listening);
+    if (mounted) {
+      setState(() {
+        _speechListening = listening;
+        if (!listening) {
+          _voiceTranscript.commitPartial();
+          _transcript = _voiceTranscript.transcript;
+        }
+      });
+    }
     // Android can finish one recognition session during a natural pause even
     // while the user is still holding the microphone. Start another session
     // so that the remainder of the same request is captured too.
@@ -556,18 +589,8 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
         final segment = result.recognizedWords.trim();
         if (segment.isEmpty) return;
         setState(() {
-          // Never replace what has already been heard. A final result after a
-          // pause often contains only the latest phrase on Android.
-          _transcript = _mergeTranscript(_transcript, segment);
-          if (result.finalResult) {
-            if (segment != _lastFinalSegment) {
-              _completedTranscript = _mergeTranscript(
-                _completedTranscript,
-                segment,
-              );
-              _lastFinalSegment = segment;
-            }
-          }
+          _voiceTranscript.addResult(segment, isFinal: result.finalResult);
+          _transcript = _voiceTranscript.transcript;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_transcriptScrollController.hasClients) return;
@@ -628,6 +651,8 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
     setState(() {
       _holding = false;
       _speechListening = false;
+      _voiceTranscript.commitPartial();
+      _transcript = _voiceTranscript.transcript;
     });
     await _speech.stop();
     await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -638,7 +663,7 @@ class _GroceryVoiceCaptureSheetState extends State<_GroceryVoiceCaptureSheet> {
       );
       return;
     }
-    Navigator.pop(context, _transcript.trim());
+    Navigator.pop(context, _voiceTranscript.finish());
   }
 
   @override
@@ -888,6 +913,12 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
       RegExp(r'^please\s+', caseSensitive: false),
       '',
     );
+    if (RegExp(
+      r'\b(?:update|change|set)\b.*\bwhats\s*app\b',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return normalized;
+    }
     final storeExpression = RegExp.escape(
       widget.store.name,
     ).replaceAll(' ', r'\\s*');
@@ -901,6 +932,30 @@ class _GroceryListEditorState extends State<GroceryListEditor> {
   }
 
   Future<bool> _applyVoiceCommand(VoiceCommand command) async {
+    if (command case UpdateStoreWhatsAppVoiceCommand(:final whatsAppNumber)) {
+      final data = await widget.repository.load();
+      Store? currentStore;
+      for (final store in data.stores) {
+        if (store.id == widget.store.id) {
+          currentStore = store;
+          break;
+        }
+      }
+      if (currentStore == null || !mounted) return false;
+      final storeToEdit = currentStore;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StoresScreen(
+            repository: widget.repository,
+            initialStoreId: storeToEdit.id,
+            initialWhatsApp: whatsAppNumber,
+          ),
+        ),
+      );
+      if (mounted) setState(() => _items = data.itemsFor(widget.store.id));
+      return true;
+    }
     if (command is! AddGroceryVoiceCommand || command.item.trim().isEmpty) {
       return false;
     }

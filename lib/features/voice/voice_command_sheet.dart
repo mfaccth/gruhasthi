@@ -62,6 +62,25 @@ sealed class VoiceCommand {
           .split(RegExp(r'\s+'))
           .map(RegExp.escape)
           .join(r'\s*');
+      final updateWhatsAppPatterns = [
+        RegExp(
+          '^(?:please\\s+)?(?:update|change|set)\\s+(?:the\\s+)?whats\\s*app\\s+(?:number\\s+)?(?:for\\s+)?$flexibleStoreName\\s+(?:to|is)\\s+(.+?)[.!]?\\s*${r'$'}',
+        ),
+        RegExp(
+          '^(?:please\\s+)?(?:update|change|set)\\s+(?:the\\s+)?$flexibleStoreName\\s+whats\\s*app\\s+(?:number\\s+)?(?:to|is)\\s+(.+?)[.!]?\\s*${r'$'}',
+        ),
+      ];
+      for (final pattern in updateWhatsAppPatterns) {
+        final updateMatch = pattern.firstMatch(normalized);
+        if (updateMatch == null) continue;
+        final whatsAppNumber = spokenPhoneNumber(updateMatch.group(1)!.trim());
+        if (whatsAppNumber.isNotEmpty) {
+          return UpdateStoreWhatsAppVoiceCommand(
+            storeName: store,
+            whatsAppNumber: whatsAppNumber,
+          );
+        }
+      }
       final addPattern = RegExp(
         '^(?:please\\s+)?add\\s+(.+?)\\s+to\\s+(?:the\\s+)?$flexibleStoreName(?:\\s+list)?[.!]?\\s*',
       );
@@ -78,6 +97,22 @@ sealed class VoiceCommand {
       if (normalized.contains(normalizedStore) &&
           (normalized.contains('list') || normalized.contains('grocery'))) {
         return OpenGroceryVoiceCommand(storeName: store);
+      }
+    }
+    if (storeNames.length == 1) {
+      final updateCurrentStoreMatch = RegExp(
+        r'^(?:please\s+)?(?:update|change|set)\s+(?:the\s+)?whats\s*app\s+(?:number\s+)?(?:to|is)\s+(.+?)[.!]?\s*$',
+      ).firstMatch(normalized);
+      if (updateCurrentStoreMatch != null) {
+        final whatsAppNumber = spokenPhoneNumber(
+          updateCurrentStoreMatch.group(1)!.trim(),
+        );
+        if (whatsAppNumber.isNotEmpty) {
+          return UpdateStoreWhatsAppVoiceCommand(
+            storeName: storeNames.single,
+            whatsAppNumber: whatsAppNumber,
+          );
+        }
       }
     }
     if (normalized.contains('grocery') || normalized.contains('list')) {
@@ -131,6 +166,11 @@ sealed class VoiceCommand {
         name: displayContactName(name),
         whatsAppNumber: whatsApp,
       ),
+      'update_store_whatsapp' when store != null && whatsApp.isNotEmpty =>
+        UpdateStoreWhatsAppVoiceCommand(
+          storeName: store,
+          whatsAppNumber: whatsApp,
+        ),
       _ => const UnrecognizedVoiceCommand(),
     };
   }
@@ -333,6 +373,16 @@ class AddStoreVoiceCommand extends VoiceCommand {
   const AddStoreVoiceCommand({required this.name, this.whatsAppNumber = ''});
 
   final String name;
+  final String whatsAppNumber;
+}
+
+class UpdateStoreWhatsAppVoiceCommand extends VoiceCommand {
+  const UpdateStoreWhatsAppVoiceCommand({
+    required this.storeName,
+    required this.whatsAppNumber,
+  });
+
+  final String storeName;
   final String whatsAppNumber;
 }
 
@@ -549,6 +599,14 @@ class _GemmaResultCard extends StatelessWidget {
             ? 'Add store $name'
             : 'Add store $name: WhatsApp $whatsAppNumber',
       ),
+      UpdateStoreWhatsAppVoiceCommand(
+        :final storeName,
+        :final whatsAppNumber,
+      ) =>
+        (
+          Icons.edit_outlined,
+          'Update $storeName WhatsApp number: $whatsAppNumber',
+        ),
       UnrecognizedVoiceCommand() => (
         Icons.help_outline,
         'No safe action was identified from this request',
@@ -637,6 +695,15 @@ class _CommandReview extends StatelessWidget {
             foregroundColor: Colors.white,
           ),
           child: Text('Review store $name'),
+        );
+      case UpdateStoreWhatsAppVoiceCommand(:final storeName):
+        return FilledButton(
+          onPressed: () => Navigator.pop(context, command),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFB64E70),
+            foregroundColor: Colors.white,
+          ),
+          child: Text('Review $storeName WhatsApp number'),
         );
       case OpenGroceryVoiceCommand(:final storeName):
         return FilledButton(
