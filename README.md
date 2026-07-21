@@ -49,6 +49,16 @@ handoff.
 Supported quantity terms include counts, `dozen`, `kg`, `kilo`, `kilogram`,
 `litre`/`liter`, `half`, and phrases such as “one and a half kg.”
 
+## How was the App built
+The App was build using Codex App. 
+
+We use the GPT-5.6-Terra model at Medium Level for over 95% of the code generated. We leaned on GPT-5.6-Luna briefly, when GPT-5.6-Terra wasn't available due to availability constraints and we wanted to keep going.
+
+We used Codex and the models to flesh out the Spec and create a detailed design before we began the implementation, to guide the implementation. As implementation progressed, we had to make some changes.
+
+Codex was used to update the documents to reflect the final implementation
+
+
 ## Prerequisites
 
 The primary build target is Android. The following steps assume macOS, but the
