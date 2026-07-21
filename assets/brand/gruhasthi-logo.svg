@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 108 108" role="img" aria-labelledby="title desc">
+  <title id="title">Gruhasthi logo</title>
+  <desc id="desc">A pastel-yellow home with a dark-pink microphone on a soft-pink background.</desc>
+  <rect width="108" height="108" fill="#FFF2F4"/>
+  <path fill="#FFD969" d="M19 55 54 25 89 55 85 59V84H64V64H44V84H23V59Z"/>
+  <path fill="#B64E70" d="M54 42c-3.3 0-6 2.7-6 6v9c0 3.3 2.7 6 6 6s6-2.7 6-6v-9c0-3.3-2.7-6-6-6Zm10 14c0 5.5-4.5 10-10 10s-10-4.5-10-10h-4c0 7.2 5.4 13.1 12 14v7h4v-7c6.6-.9 12-6.8 12-14Z"/>
+</svg>
